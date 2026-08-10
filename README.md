@@ -22,7 +22,6 @@ Calendar invites.
    ```bash
    cd backend
    cp .env.example .env
-   # set SECRET_KEY (python -c "import secrets; print(secrets.token_urlsafe(32))")
    ```
 
 3. **Install & run:**
@@ -55,7 +54,6 @@ Calendar invites.
    - `GOOGLE_CLIENT_SECRET_JSON` — the complete Google OAuth client JSON
    - `OPENAI_API_KEY` — enables natural-language scheduling
    - `OPENAI_MODEL` — optional; defaults to `gpt-4.1-nano`
-   - `SECRET_KEY` — a random value of at least 32 bytes
 4. Add `<BASE_URL>/auth/callback` as an authorized redirect URI in Google Cloud.
 5. While the OAuth consent screen is in testing, add each intended user as a
    Google OAuth test user.

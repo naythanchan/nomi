@@ -9,9 +9,6 @@ Python decides whether and when it can actually happen.**
      datetimes, or availability, and it never touches the attendee list — chips
      are authoritative. Python (intent.py) resolves the rest deterministically.
 
-  2. answer_question() — a warm, concise chat reply, grounded strictly in the
-     real availability facts we compute and hand to the model.
-
 Uses the OpenAI SDK. Model is configurable via OPENAI_MODEL (default: a low-cost
 small model). If the SDK isn't installed or OPENAI_API_KEY isn't set,
 ai_enabled() is False and callers fall back to the plain (non-AI) flow.
@@ -61,20 +58,6 @@ def _chat_json(system: str, user: str) -> dict | None:
         return json.loads(resp.choices[0].message.content)
     except Exception as e:
         print(f"[llm] json call failed: {e}")
-        return None
-
-
-def _chat_text(system: str, user: str, max_tokens: int = 300) -> str | None:
-    try:
-        resp = _get_client().chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user}],
-            max_tokens=max_tokens,
-        )
-        return (resp.choices[0].message.content or "").strip()
-    except Exception as e:
-        print(f"[llm] text call failed: {e}")
         return None
 
 
@@ -199,29 +182,3 @@ def interpret_scheduling_intent(text: str, org_tz: str,
     except ValidationError as e:
         print(f"[llm] invalid scheduling intent: {e}")
         return None
-
-
-# ---------- 2. answer an availability question ----------
-
-def answer_question(question: str, availability_summary: str) -> str | None:
-    """Compose a short, friendly reply grounded in the availability we computed."""
-    if not ai_enabled():
-        return None
-    system = (
-        "You are Nomi, a calm, concise scheduling assistant. "
-        "Answer using ONLY the availability facts provided — never invent free/busy "
-        "status. Crucial: if a calendar could NOT be checked, do NOT say that person "
-        "is free; say you couldn't check them and can still invite them. Prefer "
-        "phrasing like \"everyone I could check is free\" over \"everyone is free\" "
-        "whenever any calendar is unknown. No invitation has been sent yet: never say "
-        "someone is invited, only that the organizer can still invite them. Do not "
-        "address an unknown attendee as \"you\" or say \"I can invite\"; tell the organizer "
-        "\"you can still invite them\". Use complete sentences and standard capitalization. "
-        "Be brief and warm: say plainly whether it "
-        "works, name who's busy or unknown, and if it doesn't work suggest an "
-        "alternative. Two or three sentences at most."
-    )
-    return _chat_text(
-        system,
-        f"Question: {question}\n\nAvailability facts:\n{availability_summary}",
-    )

@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-change-me")
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8080").rstrip("/")
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{BASE_DIR / 'nomi.db'}")
 # SQLAlchemy otherwise defaults plain ``postgresql://`` URLs to psycopg2.

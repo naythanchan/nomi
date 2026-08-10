@@ -5,7 +5,7 @@ Booking creates a real Google Calendar event and invites everyone immediately.
 """
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -434,65 +434,6 @@ def _run_search(user, org_tz, attendee_tokens, ctx, now):
 
 def _fmt(dt_iso, org_tz, fmt):
     return datetime.fromisoformat(dt_iso).astimezone(ZoneInfo(org_tz)).strftime(fmt)
-
-
-def _availability_summary(result, people, plan, org_tz):
-    """Ground-truth facts for the LLM to phrase — never leaves 'unknown' as 'free'."""
-    lines = []
-    tz = ZoneInfo(org_tz)
-
-    # If the user asked about a SPECIFIC time, answer that time first, per person.
-    target = plan.exact_start or plan.preferred_start
-    if target is not None:
-        t_start = target.astimezone(tz)
-        t_end = t_start + timedelta(minutes=plan.duration_minutes)
-        when = t_start.strftime("%A %b %-d, %-I:%M %p")
-        request_label = "exact time" if plan.exact_start else "requested time"
-        verdict = (f"that {request_label} works for everyone I can check"
-                   if result.get("requested_time_available")
-                   else f"that {request_label} does NOT work")
-        lines.append(f"The user asked specifically about {when} — {verdict}.")
-        for p in people:
-            if p.email in result["calendar_unknown"]:
-                lines.append(f"- {p.name}: calendar NOT visible at that time — can still invite")
-            else:
-                busy = any(bs < t_end and be > t_start for bs, be in p.busy)
-                lines.append(f"- {p.name}: {'BUSY' if busy else 'free'} at {when}")
-        lines.append("")  # blank line before the recommendation
-
-    prop = result.get("proposal")
-    if prop:
-        start = datetime.fromisoformat(prop["start"])
-        end = datetime.fromisoformat(prop["end"])
-        when = _fmt(prop["start"], org_tz, "%A %b %-d, %-I:%M %p")
-        label = ("Best alternative that works" if result.get("requested_time_available") is False
-                 else "Recommended time")
-        lines.append(f"{label}: {when} for {plan.duration_minutes} min "
-                     f"({plan.location_type}).")
-        for p in people:
-            if p.email in result["calendar_unknown"]:
-                lines.append(f"- {p.name}: calendar NOT visible — cannot confirm, "
-                             "can still invite")
-            else:
-                busy = any(bs < end and be > start for bs, be in p.busy)
-                lines.append(f"- {p.name}: {'busy' if busy else 'free'}")
-    else:
-        lines.append("No time within everyone's waking hours works for the requested "
-                     "window.")
-        for p in people:
-            if p.email in result["calendar_unknown"]:
-                lines.append(f"- {p.name}: calendar NOT visible")
-
-    if result.get("requested_time_available") is False:
-        lines.append("Note: the requested time is not free — the time above is the "
-                     "best ranked alternative.")
-    if result["alternatives"]:
-        alts = ", ".join(_fmt(a["start"], org_tz, "%a %-I:%M %p")
-                         for a in result["alternatives"][:3])
-        lines.append(f"Other options: {alts}.")
-    if result["unresolved"]:
-        lines.append("Couldn't identify: " + ", ".join(result["unresolved"]))
-    return "\n".join(lines)
 
 
 def _availability_answer(result, plan, org_tz):

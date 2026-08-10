@@ -52,15 +52,6 @@ PURPOSE_DAYPARTS = {
     "drinks": (17 * 60, 22 * 60),
 }
 
-# Named dayparts -> (start_min, end_min) local.
-DAYPARTS = {
-    "morning": (9 * 60, 12 * 60),
-    "afternoon": (12 * 60, 17 * 60),
-    "evening": (17 * 60, 21 * 60),
-    "night": (19 * 60, 22 * 60),
-}
-
-
 class SchedulingIntent(BaseModel):
     """A validated semantic update extracted from the user's current message."""
 
