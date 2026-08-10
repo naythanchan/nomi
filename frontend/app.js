@@ -87,14 +87,14 @@
     state.scheduleBusy = on;
     const btn = $("#go");
     btn.disabled = on; btn.setAttribute("aria-busy", String(on));
-    btn.textContent = on ? "Finding times…" : "Nomi it";
+    btn.textContent = on ? "Finding times…" : "Poke";
     syncThinking();
   }
   function setAskBusy(on) {
     state.askBusy = on;
     const btn = $("#askGo");
     btn.disabled = on; btn.setAttribute("aria-busy", String(on));
-    btn.textContent = on ? "Checking…" : "Nomi it";
+    btn.textContent = on ? "Checking…" : "Poke";
     syncThinking();
   }
 
