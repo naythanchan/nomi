@@ -285,6 +285,27 @@ def resolve_plan(ctx: dict, org_tz: str, now: datetime,
     lo = _hhmm_to_min(ctx.get("time_start_local"))
     hi = _hhmm_to_min(ctx.get("time_end_local"))
 
+    # Translate conversational earlier/later into the same before/after
+    # constraints used by explicit requests, keeping a single search path.
+    shift_band = None
+    shift = ctx.get("_relative_shift")
+    prop = ctx.get("current_proposal") or {}
+    if shift and prop.get("start") and prop.get("end"):
+        try:
+            p_start = datetime.fromisoformat(prop["start"]).astimezone(tz)
+            p_end = datetime.fromisoformat(prop["end"]).astimezone(tz)
+            the_date = date_end = p_start.date()
+            ph = p_start.hour + p_start.minute / 60.0
+            shift_band = ((7 * 60, 12 * 60) if ph < 12 else
+                          (12 * 60, 17 * 60) if ph < 17 else
+                          (17 * 60, 22 * 60))
+            if shift == "earlier":
+                kind, lo, hi = "before", None, p_start.hour * 60 + p_start.minute
+            else:
+                kind, lo, hi = "after", p_end.hour * 60 + p_end.minute, None
+        except (ValueError, KeyError):
+            shift_band = None
+
     # Naming an explicit clock time outside waking hours *is* the override —
     # "schedule 6am" or "dinner at 11pm" is an explicit request, so honor it.
     for t in (lo, hi):
@@ -332,32 +353,8 @@ def resolve_plan(ctx: dict, org_tz: str, now: datetime,
         elif kind == "daypart" and lo is not None and hi is not None:
             day_lo_min, day_hi_min = lo, hi
 
-    # "anything earlier / later" — pivot around the last proposal, but stay in
-    # the same part of the day (an earlier *dinner* shouldn't become breakfast)
-    shift = ctx.get("_relative_shift")
-    prop = ctx.get("current_proposal") or {}
-    if shift and prop.get("start"):
-        try:
-            p_start = datetime.fromisoformat(prop["start"]).astimezone(tz)
-            p_end = datetime.fromisoformat(prop["end"]).astimezone(tz)
-            day = p_start.replace(hour=0, minute=0, second=0, microsecond=0)
-            if day_lo_min is None and day_hi_min is None:
-                ph = p_start.hour + p_start.minute / 60.0
-                if ph < 12:
-                    day_lo_min, day_hi_min = 7 * 60, 12 * 60      # morning
-                elif ph < 17:
-                    day_lo_min, day_hi_min = 12 * 60, 17 * 60     # afternoon
-                else:
-                    day_lo_min, day_hi_min = 17 * 60, 22 * 60     # evening
-            if shift == "earlier":
-                win_start = max(day, now)
-                win_end = p_start
-            elif shift == "later":
-                win_start = p_end
-                win_end = day + timedelta(days=1)
-            exact_start = preferred_start = None
-        except (ValueError, KeyError):
-            pass
+    if shift_band:
+        day_lo_min, day_hi_min = shift_band
 
     # never search the past
     if win_start < now:

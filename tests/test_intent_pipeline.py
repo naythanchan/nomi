@@ -85,6 +85,21 @@ class ContextReducerTests(unittest.TestCase):
         ))
         self.assertEqual(result["_relative_shift"], "later")
 
+    def test_later_uses_standard_after_window(self):
+        context = dict(self.prior)
+        context["current_proposal"] = {
+            "start": "2026-08-11T07:00:00-07:00",
+            "end": "2026-08-11T07:30:00-07:00",
+        }
+        context["_relative_shift"] = "later"
+        plan = intent.resolve_plan(
+            context, "America/Los_Angeles",
+            datetime(2026, 8, 10, 8, tzinfo=ZoneInfo("America/Los_Angeles")),
+        )
+        self.assertEqual((plan.window_start.hour, plan.window_start.minute), (7, 30))
+        self.assertEqual((plan.day_lo_min, plan.day_hi_min), (420, 720))
+        self.assertIsNone(plan.preferred_start)
+
     def test_lunch_defaults_are_resolved_in_python(self):
         context = intent.merge_intent(self.prior, intent.SchedulingIntent(
             purpose="lunch",

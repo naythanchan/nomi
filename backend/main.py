@@ -606,8 +606,10 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
             detail="I couldn't safely interpret that. Try adding a day or time, such as ‘tomorrow at lunch’.",
         )
 
-    ctx = intents.merge_intent(prior, intent)
     action = _effective_action(intent, prior)
+    if action != intent.action:
+        intent = intent.model_copy(update={"action": action})
+    ctx = intents.merge_intent(prior, intent)
 
     if action == "explain":
         last = prior.get("last_search") or {}
