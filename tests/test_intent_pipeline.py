@@ -103,6 +103,8 @@ class ContextReducerTests(unittest.TestCase):
         ))
         self.assertEqual(result["day_offset"], 1)
         self.assertNotIn("time_start_local", result)
+        self.assertNotIn("purpose", result)
+        self.assertNotIn("duration_minutes", result)
 
     def test_unspecified_relax_hours_is_preserved(self):
         result = intent.merge_intent(
@@ -146,6 +148,15 @@ class ParserBoundaryTests(unittest.TestCase):
         self.assertEqual(parsed.day_offset, 1)
         self.assertIsNone(parsed.weekday)
         self.assertIsNone(parsed.explicit_date)
+
+    def test_enum_values_are_normalized_to_lowercase(self):
+        normalized = llm._normalize_extraction({
+            "action": "Windows", "weekday": "Friday", "time_kind": "Any",
+        }, "available windows Friday")
+        parsed = intent.SchedulingIntent.model_validate(normalized)
+        self.assertEqual(parsed.action, "windows")
+        self.assertEqual(parsed.weekday, "friday")
+        self.assertIsNone(parsed.time_kind)
 
     @patch.object(llm, "ai_enabled", return_value=True)
     @patch.object(llm, "_chat_json")

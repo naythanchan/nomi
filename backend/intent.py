@@ -176,6 +176,9 @@ def merge_intent(prev: dict | None, intent: dict | SchedulingIntent | None) -> d
         if action == "windows" and has_new_day and not supplies_time:
             for field in _TIME_FIELDS:
                 ctx.pop(field, None)
+            if not new_purpose:
+                for field in ("purpose", "title", "duration_minutes"):
+                    ctx.pop(field, None)
         intent = update
 
     # Compatibility for internal callers that already provide a partial dict.

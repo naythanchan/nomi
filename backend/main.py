@@ -176,6 +176,18 @@ def _wants_shared_availability(text):
     return any(phrase in lowered for phrase in shared_phrases)
 
 
+def _effective_action(intent, prior):
+    """Keep a window-listing conversation in that mode across date-only turns."""
+    if intent.action != "search" or prior.get("_last_action") != "windows":
+        return intent.action
+    has_new_day = bool(intent.weekday or intent.day_offset is not None or intent.explicit_date)
+    has_other_change = bool(
+        intent.purpose or intent.time_start_local or intent.time_end_local or
+        intent.duration_minutes or intent.location_type or intent.relative_shift
+    )
+    return "windows" if has_new_day and not has_other_change else intent.action
+
+
 def _known_users(emails):
     """Map email -> {id, name, tz, has_token} for attendees who've signed into Nomi."""
     if not emails:
@@ -595,7 +607,7 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
         )
 
     ctx = intents.merge_intent(prior, intent)
-    action = intent.action
+    action = _effective_action(intent, prior)
 
     if action == "explain":
         last = prior.get("last_search") or {}
@@ -648,6 +660,7 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
             detail="Ask about a date or time, such as ‘Are they free tomorrow afternoon?’"
         )
 
+    ctx["_last_action"] = action
     result, people, plan = _run_search(user, org_tz, req.attendees, ctx, now)
     if action == "windows":
         shared = _wants_shared_availability(req.text)

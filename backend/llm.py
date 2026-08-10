@@ -92,6 +92,9 @@ def _mentions_time(text: str) -> bool:
 def _normalize_extraction(data: dict, text: str) -> dict:
     """Remove model-inferred clock constraints that were not in the message."""
     data = dict(data)
+    for field in ("action", "weekday", "time_kind", "location_type", "relative_shift"):
+        if isinstance(data.get(field), str):
+            data[field] = data[field].strip().lower()
     # A relative day classification is preferable to a model-computed date;
     # a named weekday is preferable when no relative offset was extracted.
     if data.get("day_offset") is not None:
@@ -100,6 +103,9 @@ def _normalize_extraction(data: dict, text: str) -> dict:
     elif data.get("weekday") is not None:
         data["explicit_date"] = None
     if data.get("purpose") and not _mentions_time(text):
+        for field in ("time_kind", "time_start_local", "time_end_local"):
+            data[field] = None
+    if data.get("action") == "windows" and not _mentions_time(text):
         for field in ("time_kind", "time_start_local", "time_end_local"):
             data[field] = None
     if data.get("relative_shift") and not data.get("time_start_local"):
