@@ -13,6 +13,7 @@
     resp: null,           // last schedule response
     sel: 0,               // selected slot index (0 = proposal)
     ctx: {},              // conversational scheduling context (Ask mode)
+    history: [],          // recent Ask turns, sent back for follow-up understanding
     scheduleSeq: 0,       // invalidates stale async responses
     askSeq: 0,
     scheduleBusy: false,
@@ -322,7 +323,8 @@
     setAskBusy(true);
     const { ok, status, data } = await api("/api/ask", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, attendees: state.chips.slice(), context: state.ctx }),
+      body: JSON.stringify({ text, attendees: state.chips.slice(), context: state.ctx,
+                             history: state.history.slice(-10) }),
     });
     if (requestId !== state.askSeq || state.mode !== "ask") return;
     userTurn.classList.remove("pending");
@@ -335,6 +337,8 @@
     }
 
     if (data.context) state.ctx = data.context;
+    state.history.push({ role: "user", text }, { role: "assistant", text: data.answer || "" });
+    state.history = state.history.slice(-10);
 
     if (data.action === "booked") {
       chatBubble("c-nomi", `<p class="ask-reply">${esc(data.answer)}</p>

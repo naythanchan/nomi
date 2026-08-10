@@ -76,12 +76,13 @@ def _chat_text(system: str, user: str, max_tokens: int = 300) -> str | None:
 # ---------- 1. interpret scheduling intent (Schedule + Ask share this) ----------
 
 def interpret_scheduling_intent(text: str, org_tz: str,
-                                has_proposal: bool = False) -> dict | None:
+                                has_proposal: bool = False,
+                                history: list[dict] | None = None) -> dict | None:
     """Extract semantic scheduling intent from one natural-language utterance.
 
     Returns a dict (never attendees). It CLASSIFIES the day reference — it does
     NOT compute calendar dates; Python does that deterministically. Keys:
-      action            "search" | "book" | "cancel"
+      action            "search" | "book" | "cancel" | "explain"
       purpose           str ("" if none)
       weekday           "monday".."sunday" | null   (a named weekday)
       day_offset        int | null                  (0=today, 1=tomorrow, 2=...)
@@ -112,7 +113,9 @@ def interpret_scheduling_intent(text: str, org_tz: str,
         f"Today is {today}. The user's timezone is {org_tz}.\n"
         + prop_line +
         "Keys (use null when not mentioned):\n"
-        '  "action": "search" | "book" | "cancel"  (default "search")\n'
+        '  "action": "search" | "book" | "cancel" | "explain". Use "explain" '
+        'when the user asks what window was searched, why a time was rejected, or '
+        'asks about the reasoning behind the previous result. Default "search".\n'
         '  "purpose": short noun like "lunch", "dinner", "sync" ("" if none)\n'
         '  "weekday": the named day lowercased ("this wed"->"wednesday", '
         '"friday"->"friday"), else null\n'
@@ -140,7 +143,15 @@ def interpret_scheduling_intent(text: str, org_tz: str,
         '(e.g. "6am", "late night is fine"), else false\n'
         "For dayparts use morning 09:00-12:00, afternoon 12:00-17:00, evening 17:00-21:00."
     )
-    data = _chat_json(system, text.strip())
+    recent = []
+    for item in (history or [])[-8:]:
+        role = item.get("role") if isinstance(item, dict) else None
+        content = item.get("text") if isinstance(item, dict) else None
+        if role in ("user", "assistant") and content:
+            recent.append(f"{role}: {str(content)[:500]}")
+    user_text = (("Recent conversation:\n" + "\n".join(recent) + "\n\n"
+                  if recent else "") + "Current message: " + text.strip())
+    data = _chat_json(system, user_text)
     if not isinstance(data, dict):
         return None
     data.setdefault("action", "search")

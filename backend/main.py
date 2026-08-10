@@ -246,6 +246,40 @@ def _slot_dict(s, *, title=None, location_type=None):
     return d
 
 
+def _window_description(plan, org_tz):
+    tz = ZoneInfo(org_tz)
+    start = plan.window_start.astimezone(tz)
+    end = plan.window_end.astimezone(tz)
+    if plan.day_lo_min is not None and plan.day_hi_min is not None:
+        lo = (start.replace(hour=0, minute=0, second=0, microsecond=0) +
+              timedelta(minutes=plan.day_lo_min))
+        hi = (start.replace(hour=0, minute=0, second=0, microsecond=0) +
+              timedelta(minutes=plan.day_hi_min))
+        return f"{lo.strftime('%A, %b %-d from %-I:%M %p')} to {hi.strftime('%-I:%M %p')}"
+    return f"{start.strftime('%A, %b %-d %-I:%M %p')} to {end.strftime('%A, %b %-d %-I:%M %p')}"
+
+
+def _requested_blockers(people, start, end, location_type):
+    blockers = []
+    wake = SETTINGS["waking_hours"]
+    buffer_min = SETTINGS["slot"]["travel_buffer_minutes"] if location_type == "in-person" else 0
+    buf = timedelta(minutes=buffer_min)
+    for person in people:
+        if any(bs < end and be > start for bs, be in person.busy):
+            blockers.append(f"{person.name} is busy then")
+            continue
+        if buffer_min and any(bs < end + buf and be > start - buf for bs, be in person.busy):
+            blockers.append(f"{person.name} doesn't have the {buffer_min}-minute travel buffer")
+            continue
+        if person.tz:
+            local_start, local_end = start.astimezone(ZoneInfo(person.tz)), end.astimezone(ZoneInfo(person.tz))
+            sm = local_start.hour * 60 + local_start.minute
+            em = local_end.hour * 60 + local_end.minute
+            if local_end.date() != local_start.date() or sm < wake["start"] or em > wake["end"]:
+                blockers.append(f"it falls outside {person.name}'s waking hours")
+    return blockers
+
+
 def _run_search(user, org_tz, attendee_tokens, ctx, now):
     """Shared scheduling engine for both Schedule and Ask.
 
@@ -286,6 +320,8 @@ def _run_search(user, org_tz, attendee_tokens, ctx, now):
             enforce_waking=not plan.relax_hours,
         )
         requested_available = free
+        requested_blockers = (_requested_blockers(
+            people, target, t_end, plan.location_type) if not free else [])
         if free:
             proposal = scheduler.ScoredSlot(
                 start=target, end=t_end, score=100,
@@ -305,6 +341,14 @@ def _run_search(user, org_tz, attendee_tokens, ctx, now):
         if proposal else None
     )
 
+    if target is None:
+        requested_blockers = []
+    window_description = _window_description(plan, org_tz)
+    new_ctx["last_search"] = {
+        "window": window_description,
+        "requested_blockers": requested_blockers,
+    }
+
     result = {
         "org_timezone": org_tz,
         "requested_time_available": requested_available,
@@ -319,6 +363,8 @@ def _run_search(user, org_tz, attendee_tokens, ctx, now):
         ],
         "unresolved": unresolved,
         "calendar_unknown": unknown,
+        "requested_blockers": requested_blockers,
+        "window_description": window_description,
         "intent": {"title": plan.title, "duration_minutes": plan.duration_minutes,
                    "location_type": plan.location_type, "purpose": plan.purpose},
         "context": new_ctx,
@@ -403,11 +449,13 @@ def _availability_answer(result, plan, org_tz):
         requested = target.astimezone(ZoneInfo(org_tz)).strftime("%A at %-I:%M %p")
         if result.get("requested_time_available"):
             return f"{requested} works for everyone I could check.{unknown_note}"
+        blockers = result.get("requested_blockers") or []
+        reason = f" because {'; '.join(blockers)}" if blockers else ""
         if proposal:
             best = _fmt(proposal["start"], org_tz, "%A at %-I:%M %p")
-            return (f"{requested} doesn't work for everyone I could check. "
+            return (f"{requested} doesn't work{reason}. "
                     f"The best available option is {best}.{unknown_note}")
-        return f"{requested} doesn't work for everyone I could check.{unknown_note}"
+        return f"{requested} doesn't work{reason}.{unknown_note}"
 
     if proposal:
         best = _fmt(proposal["start"], org_tz, "%A at %-I:%M %p")
@@ -488,12 +536,26 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
 
     prior = dict(req.context or {})
     has_prop = bool(prior.get("current_proposal"))
-    intent = llm.interpret_scheduling_intent(req.text, org_tz, has_proposal=has_prop)
+    intent = llm.interpret_scheduling_intent(
+        req.text, org_tz, has_proposal=has_prop, history=req.history)
     if not intent:
         raise HTTPException(status_code=422, detail="Couldn't understand that. Try rephrasing.")
 
     ctx = intents.merge_intent(prior, intent)
     action = intent.get("action", "search")
+
+    if action == "explain":
+        last = prior.get("last_search") or {}
+        if not last:
+            return {"action": "explain", "answer": "I don't have a previous search to explain yet.",
+                    "context": prior}
+        answer = f"I searched {last.get('window', 'the requested window')}."
+        blockers = last.get("requested_blockers") or []
+        if blockers:
+            answer += " The requested time was skipped because " + "; ".join(blockers) + "."
+        else:
+            answer += " The displayed proposal was the highest-ranked available time in that window."
+        return {"action": "explain", "answer": answer, "context": prior}
 
     # --- confirm & book the current proposal ---
     if action == "book":

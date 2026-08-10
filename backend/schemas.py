@@ -25,6 +25,7 @@ class AskRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     attendees: list[str] = Field(default_factory=list)   # chips (authoritative)
     context: Optional[dict[str, Any]] = None             # conversational scheduling state
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
 
 
 class BookRequest(BaseModel):
