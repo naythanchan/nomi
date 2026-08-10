@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nomi</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%F0%9F%95%90%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css?v=4">
+</head>
+<body>
+  <header class="top">
+    <span class="wordmark">Nomi</span>
+    <span class="sp"></span>
+    <button class="tbtn" id="theme" aria-label="Toggle theme" title="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <button class="signout" id="signout" hidden>Sign out</button>
+  </header>
+
+  <main class="stage">
+    <button class="pet" id="pet" aria-label="Tap to schedule a meeting">
+      <span class="pet-inner">
+        <svg class="clock" id="clock" viewBox="0 0 360 320" aria-hidden="true">
+          <ellipse class="pshadow" cx="180" cy="287" rx="96" ry="9"/>
+          <line class="leg" x1="126" y1="270" x2="118" y2="294"/>
+          <line class="leg" x1="238" y1="269" x2="246" y2="293"/>
+          <path class="blob" d="M 78 156 C 79 100, 112 55, 166 48 C 211 42, 256 60, 281 94 C 302 122, 310 158, 304 195 C 298 234, 273 258, 236 270 C 201 281, 155 281, 121 269 C 89 258, 68 236, 63 205 C 59 186, 64 168, 78 156"/>
+          <g class="pet-eye-shift">
+            <g class="eye"><ellipse class="eyeball" cx="145" cy="165" rx="9" ry="18"/></g>
+            <g class="eye"><ellipse class="eyeball" cx="218" cy="165" rx="9" ry="18"/></g>
+          </g>
+          <g class="sec">
+            <line class="hand" x1="272" y1="108" x2="296" y2="92"/>
+            <circle class="knob" cx="300" cy="88" r="27"/>
+          </g>
+        </svg>
+      </span>
+    </button>
+    <p class="hint" id="hint">tap me</p>
+
+    <div class="bubble" id="bubble">
+      <!-- signed-out -->
+      <div class="signin" id="signin" hidden>
+        <p class="signin-lead">Sign in to reach your calendar and your team.</p>
+        <a class="go" href="/auth/login">Sign in with Google</a>
+      </div>
+
+      <!-- people first: shared by both modes -->
+      <div class="people" id="people" hidden>
+        <div class="chips" id="chips"></div>
+        <input class="fin" id="chipInput" placeholder="Add people by email, then Enter">
+      </div>
+
+      <!-- mode toggle (only when AI is available) -->
+      <div class="modes" id="modes" hidden>
+        <button data-mode="schedule" class="on">Schedule</button><span class="msep">·</span><button data-mode="ask">Ask</button>
+      </div>
+
+      <!-- schedule form -->
+      <div class="form" id="form" hidden>
+        <!-- title (when AI is off) -->
+        <input class="fin" id="what" placeholder="What's the meeting?" hidden>
+        <!-- timing, parsed by AI (when AI is on) -->
+        <input class="fin" id="nl" hidden placeholder="Add timing — “lunch wed at 1”, “45 min” (optional)">
+        <div class="frow" id="frow">
+          <div class="dur">
+            <input type="range" class="range" id="dur" min="15" max="120" step="5" value="30" aria-label="Duration">
+            <span class="val" id="durVal">30 min</span>
+          </div>
+          <div class="loc" id="loc" role="group" aria-label="Location">
+            <button data-loc="virtual" class="on">Virtual</button><span class="sep">·</span><button data-loc="in-person">In person</button>
+          </div>
+        </div>
+        <button class="go" id="go">Go</button>
+        <p class="err" id="formErr" hidden></p>
+      </div>
+
+      <!-- ask / conversational -->
+      <div class="ask" id="ask" hidden>
+        <div class="chat" id="chat"></div>
+        <textarea class="fin" id="askq" rows="2"
+          placeholder="“Are they free for dinner Thursday?”"></textarea>
+        <button class="go" id="askGo">Ask</button>
+        <p class="err" id="askErr" hidden></p>
+      </div>
+
+      <!-- schedule result -->
+      <div class="result" id="result" aria-live="polite"><div id="resInner"></div></div>
+    </div>
+  </main>
+
+  <script src="/app.js?v=4"></script>
+</body>
+</html>

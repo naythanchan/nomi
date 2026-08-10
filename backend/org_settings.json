@@ -1,0 +1,27 @@
+{
+  "organization": { "name": "Nomi", "default_timezone": "America/New_York" },
+  "work_hours":   { "start": 0, "end": 1440 },
+  "waking_hours": { "start": 420, "end": 1320 },
+  "lunch_window": { "start": 720, "end": 780 },
+  "slot": { "interval_minutes": 15, "travel_buffer_minutes": 30 },
+  "penalties": {
+    "outside_work_hours": 300,
+    "overlaps_lunch": 14,
+    "early_morning": 12,
+    "late_evening": 10,
+    "no_morning_buffer": 6,
+    "splits_short_gap": 8,
+    "friday_afternoon": 6,
+    "per_timezone_hour_out": 8,
+    "max_timezone_penalty": 20
+  },
+  "bonuses": {
+    "mid_morning": 8,
+    "mid_afternoon": 6,
+    "protects_focus": 7,
+    "monday_morning": 3,
+    "virtual": 2,
+    "in_person_midday": 3,
+    "kind_across_timezones": 5
+  }
+}

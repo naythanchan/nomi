@@ -1,0 +1,27 @@
+# Secrets / credentials
+backend/.env
+backend/client_secret.json
+*.pem
+*.key
+
+# Database
+backend/nomi.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
