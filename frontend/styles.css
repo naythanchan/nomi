@@ -125,7 +125,7 @@ button{ font-family:inherit; cursor:pointer; }
   font-size:15px; padding:7px 0; display:block; }
 .fin:focus, .fin:focus-visible{ outline:none; border-radius:0; border-bottom-color:var(--accent); }
 .fin::placeholder{ color:var(--faint); }
-#nl{ margin-top:2px; }
+#nl, #nl:focus, #nl:focus-visible{ margin-top:2px; border-bottom-color:transparent; }
 .frow{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding-top:10px; flex-wrap:wrap; }
 .dur{ display:inline-flex; align-items:center; gap:11px; }
 .dur .val{ font-size:13px; color:var(--soft); min-width:46px; }
