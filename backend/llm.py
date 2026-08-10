@@ -20,8 +20,13 @@ from __future__ import annotations
 
 import os
 import json
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from pydantic import ValidationError
+
+from intent import SchedulingIntent
 
 try:
     from openai import OpenAI
@@ -73,14 +78,44 @@ def _chat_text(system: str, user: str, max_tokens: int = 300) -> str | None:
         return None
 
 
+def _mentions_time(text: str) -> bool:
+    """Whether the user actually supplied a clock or named part of day."""
+    lowered = (text or "").lower()
+    if re.search(r"\b(?:[01]?\d|2[0-3])(?::[0-5]\d)?\s*(?:am|pm)\b", lowered):
+        return True
+    if re.search(r"\b(?:at|around|before|after|between)\s+(?:[01]?\d|2[0-3])\b", lowered):
+        return True
+    return bool(re.search(
+        r"\b(?:morning|afternoon|evening|night|noon|midnight|lunchtime)\b", lowered))
+
+
+def _normalize_extraction(data: dict, text: str) -> dict:
+    """Remove model-inferred clock constraints that were not in the message."""
+    data = dict(data)
+    # A relative day classification is preferable to a model-computed date;
+    # a named weekday is preferable when no relative offset was extracted.
+    if data.get("day_offset") is not None:
+        data["weekday"] = None
+        data["explicit_date"] = None
+    elif data.get("weekday") is not None:
+        data["explicit_date"] = None
+    if data.get("purpose") and not _mentions_time(text):
+        for field in ("time_kind", "time_start_local", "time_end_local"):
+            data[field] = None
+    if data.get("relative_shift") and not data.get("time_start_local"):
+        data["action"] = "search"
+        data["time_kind"] = None
+        data["time_end_local"] = None
+    return data
+
+
 # ---------- 1. interpret scheduling intent (Schedule + Ask share this) ----------
 
 def interpret_scheduling_intent(text: str, org_tz: str,
-                                has_proposal: bool = False,
-                                history: list[dict] | None = None) -> dict | None:
+                                has_proposal: bool = False) -> SchedulingIntent | None:
     """Extract semantic scheduling intent from one natural-language utterance.
 
-    Returns a dict (never attendees). It CLASSIFIES the day reference — it does
+    Returns a validated patch (never attendees). It CLASSIFIES the day reference — it does
     NOT compute calendar dates; Python does that deterministically. Keys:
       action            "search" | "windows" | "book" | "cancel" | "explain"
       purpose           str ("" if none)
@@ -142,26 +177,22 @@ def interpret_scheduling_intent(text: str, org_tz: str,
         'else "virtual" if implied (call/zoom/virtual), else null\n'
         '  "relative_shift": "earlier" or "later" for "anything earlier?"/"later?", else null\n'
         '  "relax_hours": true only if the user explicitly wants an odd hour '
-        '(e.g. "6am", "late night is fine"), else false\n'
+        '(e.g. "6am", "late night is fine"), else null\n'
+        'Extract ONLY constraints stated or directly implied by the CURRENT message; '
+        'do not repeat prior context. Code merges this update with prior context. '
+        'Do not infer a time/daypart merely from a purpose such as lunch or dinner; '
+        'code owns those defaults. Use only one of weekday, day_offset, or explicit_date.\n'
         "For dayparts use morning 09:00-12:00, afternoon 12:00-17:00, evening 17:00-21:00."
     )
-    recent = []
-    for item in (history or [])[-8:]:
-        role = item.get("role") if isinstance(item, dict) else None
-        content = item.get("text") if isinstance(item, dict) else None
-        if role in ("user", "assistant") and content:
-            recent.append(f"{role}: {str(content)[:500]}")
-    user_text = (("Recent conversation:\n" + "\n".join(recent) + "\n\n"
-                  if recent else "") + "Current message: " + text.strip())
+    user_text = "Current message: " + text.strip()
     data = _chat_json(system, user_text)
     if not isinstance(data, dict):
         return None
-    data.setdefault("action", "search")
-    lowered = text.lower()
-    if (any(word in lowered for word in ("window", "windows", "availability")) and
-            any(word in lowered for word in ("free", "empty", "open", "available"))):
-        data["action"] = "windows"
-    return data
+    try:
+        return SchedulingIntent.model_validate(_normalize_extraction(data, text))
+    except ValidationError as e:
+        print(f"[llm] invalid scheduling intent: {e}")
+        return None
 
 
 # ---------- 2. answer an availability question ----------

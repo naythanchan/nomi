@@ -166,59 +166,6 @@ def _has_when(ctx):
     return any(name in purpose for name in intents.PURPOSE_DAYPARTS)
 
 
-def _windows_followup_intent(text, prior):
-    """Parse common availability-window follow-ups without another model call."""
-    lowered = (text or "").lower()
-    asks_windows = (
-        any(word in lowered for word in ("window", "windows", "availability")) and
-        any(word in lowered for word in ("free", "empty", "open", "available"))
-    )
-    if not asks_windows:
-        return None
-
-    parsed = {"action": "windows"}
-    new_day = False
-    if "tomorrow" in lowered or "tmrw" in lowered:
-        parsed.update({"day_offset": 1, "weekday": None, "next_week": False})
-        new_day = True
-    elif "today" in lowered:
-        parsed.update({"day_offset": 0, "weekday": None, "next_week": False})
-        new_day = True
-    else:
-        weekdays = {
-            "monday": "monday", "mon": "monday", "tuesday": "tuesday", "tue": "tuesday",
-            "wednesday": "wednesday", "wed": "wednesday", "thursday": "thursday", "thu": "thursday",
-            "friday": "friday", "fri": "friday", "saturday": "saturday", "sat": "saturday",
-            "sunday": "sunday", "sun": "sunday",
-        }
-        for token, weekday in weekdays.items():
-            if re.search(rf"\b{token}\b", lowered):
-                parsed.update({"weekday": weekday, "day_offset": None,
-                               "next_week": "next" in lowered})
-                new_day = True
-                break
-
-    dayparts = {
-        "morning": (9 * 60, 12 * 60),
-        "afternoon": (12 * 60, 17 * 60),
-        "evening": (17 * 60, 21 * 60),
-        "night": (19 * 60, 22 * 60),
-    }
-    for word, (lo, hi) in dayparts.items():
-        if word in lowered:
-            parsed.update({"time_kind": "daypart",
-                           "time_start_local": f"{lo // 60:02d}:{lo % 60:02d}",
-                           "time_end_local": f"{hi // 60:02d}:{hi % 60:02d}"})
-            break
-    else:
-        if new_day:
-            parsed["_clear_time"] = True
-
-    if not new_day and not any(word in lowered for word in dayparts) and not _has_when(prior):
-        return None
-    return parsed
-
-
 def _wants_shared_availability(text):
     """Whether an availability question explicitly includes the organizer."""
     lowered = (text or "").lower()
@@ -227,31 +174,6 @@ def _wants_shared_availability(text):
         "everyone", "everybody", "work for us", "our availability",
     )
     return any(phrase in lowered for phrase in shared_phrases)
-
-
-def _purpose_followup_intent(text, prior):
-    """Parse simple activity follow-ups while preserving the prior date."""
-    lowered = (text or "").lower()
-    if not _has_when(prior):
-        return None
-    purposes = (
-        "breakfast", "brunch", "coffee", "lunch", "dinner", "drinks",
-        "sync", "meeting", "call", "interview", "workout", "demo",
-    )
-    purpose = next((word for word in purposes if re.search(rf"\b{word}\b", lowered)), None)
-    if not purpose:
-        return None
-    # Explicit timing still goes through the full parser. This handles concise
-    # contextual turns such as "when's best for lunch?".
-    timing_words = (
-        "today", "tomorrow", "tmrw", "morning", "afternoon", "evening", "night",
-        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-        " am", " pm",
-    )
-    if any(word in lowered for word in timing_words) or re.search(r"\d", lowered):
-        return None
-    return {"action": "search", "purpose": purpose, "_clear_time": True,
-            "_clear_duration": True, "_clear_title": True}
 
 
 def _known_users(emails):
@@ -664,27 +586,16 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
 
     prior = dict(req.context or {})
     has_prop = bool(prior.get("current_proposal"))
-    deterministic_windows = _windows_followup_intent(req.text, prior)
-    deterministic_purpose = _purpose_followup_intent(req.text, prior)
-    if deterministic_windows:
-        intent = deterministic_windows
-    elif deterministic_purpose:
-        intent = deterministic_purpose
-    else:
-        intent = llm.interpret_scheduling_intent(
-            req.text, org_tz, has_proposal=has_prop, history=req.history)
+    intent = llm.interpret_scheduling_intent(
+        req.text, org_tz, has_proposal=has_prop)
     if not intent:
-        raise HTTPException(status_code=422, detail="Couldn't understand that. Try rephrasing.")
+        raise HTTPException(
+            status_code=422,
+            detail="I couldn't safely interpret that. Try adding a day or time, such as ‘tomorrow at lunch’.",
+        )
 
     ctx = intents.merge_intent(prior, intent)
-    if intent.get("_clear_time"):
-        for field in ("time_kind", "time_start_local", "time_end_local"):
-            ctx.pop(field, None)
-    if intent.get("_clear_duration"):
-        ctx.pop("duration_minutes", None)
-    if intent.get("_clear_title"):
-        ctx.pop("title", None)
-    action = intent.get("action", "search")
+    action = intent.action
 
     if action == "explain":
         last = prior.get("last_search") or {}
@@ -720,6 +631,13 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
             "action": "booked", "booked": True,
             "answer": f"Done — invite sent for {when}.",
             "event_id": event.get("id"), "html_link": event.get("htmlLink"),
+            "context": ctx,
+        }
+
+    if action == "cancel":
+        ctx["current_proposal"] = None
+        return {
+            "action": "cancel", "answer": "Okay — I cleared that suggestion.",
             "context": ctx,
         }
 

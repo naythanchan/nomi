@@ -27,7 +27,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date as date_cls
+from typing import Literal
 from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # Deterministic duration by purpose (minutes). Unknown purpose -> 30.
@@ -56,6 +59,50 @@ DAYPARTS = {
     "evening": (17 * 60, 21 * 60),
     "night": (19 * 60, 22 * 60),
 }
+
+
+class SchedulingIntent(BaseModel):
+    """A validated semantic update extracted from the user's current message."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["search", "windows", "book", "cancel", "explain"] = "search"
+    purpose: str | None = Field(default=None, max_length=100)
+    weekday: Literal[
+        "monday", "tuesday", "wednesday", "thursday",
+        "friday", "saturday", "sunday",
+    ] | None = None
+    day_offset: int | None = Field(default=None, ge=0, le=365)
+    next_week: bool | None = None
+    explicit_date: str | None = None
+    span_days: int | None = Field(default=None, ge=1, le=31)
+    time_kind: Literal[
+        "exact", "preferred", "after", "before", "between", "daypart", "any",
+    ] | None = None
+    time_start_local: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    time_end_local: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    duration_minutes: int | None = Field(default=None, ge=5, le=480)
+    location_type: Literal["virtual", "in-person"] | None = None
+    relative_shift: Literal["earlier", "later"] | None = None
+    relax_hours: bool | None = None
+
+    @model_validator(mode="after")
+    def coherent_constraints(self):
+        day_refs = sum(value is not None for value in
+                       (self.weekday, self.day_offset, self.explicit_date))
+        if day_refs > 1:
+            raise ValueError("use only one day reference")
+        if self.explicit_date and _parse_date(self.explicit_date) is None:
+            raise ValueError("explicit_date must be an ISO calendar date")
+        needs_start = self.time_kind in ("exact", "preferred", "after", "between", "daypart")
+        needs_end = self.time_kind in ("before", "between", "daypart")
+        if needs_start and not self.time_start_local:
+            raise ValueError(f"{self.time_kind} requires time_start_local")
+        if needs_end and not self.time_end_local:
+            raise ValueError(f"{self.time_kind} requires time_end_local")
+        if self.time_kind == "any" and (self.time_start_local or self.time_end_local):
+            raise ValueError("time_kind any cannot include clock times")
+        return self
 
 
 def infer_duration(purpose: str, explicit: int | None = None) -> int:
@@ -101,17 +148,43 @@ _DATE_FIELDS = ("weekday", "day_offset", "next_week", "explicit_date", "span_day
 _WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
-def merge_intent(prev: dict | None, intent: dict | None) -> dict:
-    """Overlay a freshly-parsed intent onto the running context.
+def merge_intent(prev: dict | None, intent: dict | SchedulingIntent | None) -> dict:
+    """Apply one validated semantic update to the running context.
 
-    Only non-empty fields override, so a follow-up like "how about Friday?"
-    (which carries only a day reference) keeps the earlier purpose/time/duration.
+    Clearing follows general meaning rather than phrase lists: a changed
+    purpose drops an inherited clock/duration unless the message supplied new
+    ones, and a broad windows request drops an inherited clock constraint.
     """
     ctx = dict(prev or {})
+    if isinstance(intent, SchedulingIntent):
+        update = intent.model_dump(exclude_none=True)
+        action = update.pop("action", "search")
+        new_purpose = update.get("purpose")
+        supplies_time = (update.get("time_kind") not in (None, "any") or
+                         update.get("time_start_local") is not None or
+                         update.get("time_end_local") is not None)
+        if new_purpose and new_purpose != ctx.get("purpose"):
+            ctx.pop("title", None)
+            if not supplies_time:
+                for field in _TIME_FIELDS:
+                    ctx.pop(field, None)
+            if update.get("duration_minutes") is None:
+                ctx.pop("duration_minutes", None)
+        has_new_day = (update.get("weekday") is not None or
+                       update.get("day_offset") is not None or
+                       update.get("explicit_date") is not None)
+        if action == "windows" and has_new_day and not supplies_time:
+            for field in _TIME_FIELDS:
+                ctx.pop(field, None)
+        intent = update
+
+    # Compatibility for internal callers that already provide a partial dict.
     intent = intent or {}
 
     if intent.get("purpose"):
         ctx["purpose"] = intent["purpose"]
+        # Titles are derived from purpose; never retain a stale prior title.
+        ctx.pop("title", None)
 
     # a new day reference replaces the whole prior day reference (all-or-nothing)
     has_day = (intent.get("weekday") or intent.get("day_offset") is not None
@@ -128,8 +201,8 @@ def merge_intent(prev: dict | None, intent: dict | None) -> dict:
         ctx["duration_minutes"] = int(intent["duration_minutes"])
     if intent.get("location_type") in ("virtual", "in-person"):
         ctx["location_type"] = intent["location_type"]
-    if intent.get("relax_hours"):
-        ctx["relax_hours"] = True
+    if intent.get("relax_hours") is not None:
+        ctx["relax_hours"] = bool(intent["relax_hours"])
 
     ctx["_relative_shift"] = intent.get("relative_shift")  # transient, not persisted long
     return ctx
