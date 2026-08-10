@@ -127,12 +127,10 @@ button{ font-family:inherit; cursor:pointer; }
 .fin:focus, .fin:focus-visible{ outline:none; border-radius:0; border-bottom-color:var(--accent); }
 .fin::placeholder{ color:var(--placeholder); opacity:1; }
 #nl, #nl:focus, #nl:focus-visible{ margin-top:2px; border-bottom-color:transparent; }
-.frow{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding-top:10px; flex-wrap:wrap; }
-.dur{ display:inline-flex; align-items:center; gap:11px; }
-.dur .val{ font-size:13px; color:var(--soft); min-width:46px; }
-.range{ -webkit-appearance:none; appearance:none; width:80px; height:2px; border-radius:2px; background:var(--line-2); cursor:pointer; }
-.range::-webkit-slider-thumb{ -webkit-appearance:none; width:12px; height:12px; border-radius:50%; background:var(--card); border:1.5px solid var(--accent); cursor:pointer; }
-.range::-moz-range-thumb{ width:12px; height:12px; background:var(--card); border:1.5px solid var(--accent); border-radius:50%; }
+.frow{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:5px; min-height:26px; }
+.dur{ display:inline-flex; align-items:center; }
+.dur select{ appearance:none; -webkit-appearance:none; border:0; outline:0; background:transparent;
+  color:var(--soft); font-family:inherit; padding:2px 14px 2px 0; cursor:pointer; }
 .loc{ display:inline-flex; align-items:center; gap:7px; }
 .loc button{ position:relative; border:none; background:none; color:var(--faint); font-size:12.5px; padding:2px 0; }
 .loc button.on{ color:var(--ink); }
@@ -177,7 +175,7 @@ button{ font-family:inherit; cursor:pointer; }
   .stage{ padding:5vh 14px 80px; }
   .clock{ width:142px; }
   .bubble{ padding:16px; border-radius:18px; }
-  .frow{ align-items:flex-start; }
+  .frow{ align-items:center; }
   .r-time{ font-size:23px; }
   .r-actions{ gap:12px; flex-wrap:wrap; }
 }

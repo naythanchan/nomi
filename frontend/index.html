@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nomi</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%F0%9F%95%90%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/styles.css?v=12">
+  <link rel="stylesheet" href="/styles.css?v=13">
 </head>
 <body>
   <header class="top">
@@ -64,8 +64,14 @@
         <input class="fin" id="nl" hidden placeholder="“Find a time for dinner Thursday”">
         <div class="frow" id="frow">
           <div class="dur">
-            <input type="range" class="range" id="dur" min="15" max="120" step="5" value="30" aria-label="Duration">
-            <span class="val" id="durVal">30 min</span>
+            <select id="dur" aria-label="Duration">
+              <option value="15">15 min</option>
+              <option value="30" selected>30 min</option>
+              <option value="45">45 min</option>
+              <option value="60">1 hour</option>
+              <option value="90">1.5 hours</option>
+              <option value="120">2 hours</option>
+            </select>
           </div>
           <div class="loc" id="loc" role="group" aria-label="Location">
             <button data-loc="virtual" class="on" aria-pressed="true">Virtual</button><span class="sep">·</span><button data-loc="in-person" aria-pressed="false">In person</button>

@@ -446,10 +446,8 @@
     else if (e.key === "Backspace" && !$("#chipInput").value && state.chips.length) { state.chips.pop(); renderChips(); }
   });
   $("#chipInput").addEventListener("blur", flushInput);
-  $("#dur").addEventListener("input", (e) => {
+  $("#dur").addEventListener("change", (e) => {
     state.duration = +e.target.value;
-    const m = state.duration, h = Math.floor(m / 60), mm = m % 60;
-    $("#durVal").textContent = h && mm ? `${h}h ${mm}m` : h ? `${h}h` : `${mm} min`;
   });
   $("#loc").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
