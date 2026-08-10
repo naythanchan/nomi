@@ -183,3 +183,6 @@ button{ font-family:inherit; cursor:pointer; }
 }
 
 @media (prefers-reduced-motion:reduce){ *{ animation:none !important; transition:none !important; } }
+
+/* Nomi intentionally uses a single type size throughout the interface. */
+body *{ font-size:15px !important; }
