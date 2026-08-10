@@ -229,6 +229,31 @@ def _wants_shared_availability(text):
     return any(phrase in lowered for phrase in shared_phrases)
 
 
+def _purpose_followup_intent(text, prior):
+    """Parse simple activity follow-ups while preserving the prior date."""
+    lowered = (text or "").lower()
+    if not _has_when(prior):
+        return None
+    purposes = (
+        "breakfast", "brunch", "coffee", "lunch", "dinner", "drinks",
+        "sync", "meeting", "call", "interview", "workout", "demo",
+    )
+    purpose = next((word for word in purposes if re.search(rf"\b{word}\b", lowered)), None)
+    if not purpose:
+        return None
+    # Explicit timing still goes through the full parser. This handles concise
+    # contextual turns such as "when's best for lunch?".
+    timing_words = (
+        "today", "tomorrow", "tmrw", "morning", "afternoon", "evening", "night",
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        " am", " pm",
+    )
+    if any(word in lowered for word in timing_words) or re.search(r"\d", lowered):
+        return None
+    return {"action": "search", "purpose": purpose, "_clear_time": True,
+            "_clear_duration": True, "_clear_title": True}
+
+
 def _known_users(emails):
     """Map email -> {id, name, tz, has_token} for attendees who've signed into Nomi."""
     if not emails:
@@ -561,7 +586,9 @@ def _availability_answer(result, plan, org_tz):
     if proposal:
         best = _fmt(proposal["start"], org_tz, "%A at %-I:%M %p")
         return f"The best available option is {best}.{unknown_note}"
-    return f"I couldn't find a time that works in that window.{unknown_note}"
+    window = result.get("window_description") or "that window"
+    return (f"I couldn't find a {plan.duration_minutes}-minute time that works in "
+            f"{window}.{unknown_note}")
 
 
 def _do_book(user, org_tz, *, title, location_type, start_iso, end_iso, attendee_emails):
@@ -638,8 +665,11 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
     prior = dict(req.context or {})
     has_prop = bool(prior.get("current_proposal"))
     deterministic_windows = _windows_followup_intent(req.text, prior)
+    deterministic_purpose = _purpose_followup_intent(req.text, prior)
     if deterministic_windows:
         intent = deterministic_windows
+    elif deterministic_purpose:
+        intent = deterministic_purpose
     else:
         intent = llm.interpret_scheduling_intent(
             req.text, org_tz, has_proposal=has_prop, history=req.history)
@@ -650,6 +680,10 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
     if intent.get("_clear_time"):
         for field in ("time_kind", "time_start_local", "time_end_local"):
             ctx.pop(field, None)
+    if intent.get("_clear_duration"):
+        ctx.pop("duration_minutes", None)
+    if intent.get("_clear_title"):
+        ctx.pop("title", None)
     action = intent.get("action", "search")
 
     if action == "explain":
