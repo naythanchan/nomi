@@ -219,6 +219,16 @@ def _windows_followup_intent(text, prior):
     return parsed
 
 
+def _wants_shared_availability(text):
+    """Whether an availability question explicitly includes the organizer."""
+    lowered = (text or "").lower()
+    shared_phrases = (
+        "shared", "both free", "we both", "we all", "all free", "all of us",
+        "everyone", "everybody", "work for us", "our availability",
+    )
+    return any(phrase in lowered for phrase in shared_phrases)
+
+
 def _known_users(emails):
     """Map email -> {id, name, tz, has_token} for attendees who've signed into Nomi."""
     if not emails:
@@ -688,16 +698,29 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
 
     result, people, plan = _run_search(user, org_tz, req.attendees, ctx, now)
     if action == "windows":
-        windows = _availability_windows(people, plan, org_tz)
+        shared = _wants_shared_availability(req.text)
+        if shared:
+            window_people = [p for p in people if p.email not in result["calendar_unknown"]]
+        else:
+            # "their availability" means the attendee chips, not the organizer.
+            window_people = [p for p in people[1:] if p.email not in result["calendar_unknown"]]
+        windows = _availability_windows(window_people, plan, org_tz) if window_people else []
         result["action"] = "windows"
         result["windows"] = windows
+        result["availability_scope"] = "shared" if shared else "attendees"
         result["proposal"] = None
         result["alternatives"] = []
         result["context"]["current_proposal"] = None
-        if windows:
+        if not window_people:
+            result["answer"] = "I couldn't check the requested attendee calendars."
+        elif windows and shared:
             result["answer"] = "Here are the shared free windows I found."
-        else:
+        elif windows:
+            result["answer"] = "Here are the attendees' free windows I found."
+        elif shared:
             result["answer"] = "I couldn't find a shared free window in that period."
+        else:
+            result["answer"] = "I couldn't find an attendee free window in that period."
         if result.get("calendar_unknown"):
             result["answer"] += " This only reflects the calendars I could check."
         return result
