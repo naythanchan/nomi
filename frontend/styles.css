@@ -2,7 +2,7 @@
   --bg:#F4F2EC; --ink:#3B3A34; --soft:#807C71; --faint:#B2AD9F;
   --line:#E6E2D7; --line-2:#DAD5C7; --card:#FBFAF5;
   --accent:#6E8B6C; --accent-deep:#556F53; --accent-soft:#E7EDE2; --amber:#A9793F;
-  --button-ink:#F7F6F0;
+  --button-ink:#F7F6F0; --placeholder:#A49F93;
   --petshadow:rgba(60,58,48,.10);
   --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --serif: var(--sans);
@@ -11,11 +11,11 @@
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
   --bg:#1A1915; --ink:#E8E4D8; --soft:#9E9A8C; --faint:#615E53;
   --line:#2A2822; --line-2:#37342B; --card:#212019;
-  --accent:#8DAE8B; --accent-deep:#A6C3A3; --accent-soft:#232A21; --amber:#C79A63; --button-ink:#1A1915; --petshadow:rgba(0,0,0,.4); } }
+  --accent:#8DAE8B; --accent-deep:#A6C3A3; --accent-soft:#232A21; --amber:#C79A63; --button-ink:#1A1915; --placeholder:#777368; --petshadow:rgba(0,0,0,.4); } }
 :root[data-theme="dark"]{
   --bg:#1A1915; --ink:#E8E4D8; --soft:#9E9A8C; --faint:#615E53;
   --line:#2A2822; --line-2:#37342B; --card:#212019;
-  --accent:#8DAE8B; --accent-deep:#A6C3A3; --accent-soft:#232A21; --amber:#C79A63; --button-ink:#1A1915; --petshadow:rgba(0,0,0,.4); }
+  --accent:#8DAE8B; --accent-deep:#A6C3A3; --accent-soft:#232A21; --amber:#C79A63; --button-ink:#1A1915; --placeholder:#777368; --petshadow:rgba(0,0,0,.4); }
 
 *{ box-sizing:border-box; }
 html,body{ height:100%; }
@@ -125,7 +125,7 @@ button{ font-family:inherit; cursor:pointer; }
 .fin{ width:100%; border:none; border-bottom:1px solid transparent; background:none; color:var(--ink); font-family:var(--sans);
   font-size:15px; padding:7px 0; display:block; }
 .fin:focus, .fin:focus-visible{ outline:none; border-radius:0; border-bottom-color:var(--accent); }
-.fin::placeholder{ color:var(--soft); opacity:.82; }
+.fin::placeholder{ color:var(--placeholder); opacity:1; }
 #nl, #nl:focus, #nl:focus-visible{ margin-top:2px; border-bottom-color:transparent; }
 .frow{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding-top:10px; flex-wrap:wrap; }
 .dur{ display:inline-flex; align-items:center; gap:11px; }
