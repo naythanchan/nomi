@@ -28,6 +28,14 @@ SETTINGS = scheduler.load_settings(config.ORG_SETTINGS_FILE)
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+@app.middleware("http")
+async def prevent_stale_frontend(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path in ("/", "/index.html", "/app.js", "/styles.css"):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
+
+
 @app.on_event("startup")
 def _startup():
     init_db()
@@ -381,6 +389,32 @@ def _availability_summary(result, people, plan, org_tz):
     return "\n".join(lines)
 
 
+def _availability_answer(result, plan, org_tz):
+    """Phrase the computed result without letting generated prose contradict it."""
+    proposal = result.get("proposal")
+    unknown = result.get("calendar_unknown") or []
+    unknown_note = ""
+    if unknown:
+        unknown_note = (" I couldn't check " + ", ".join(unknown) +
+                        ", so their availability isn't confirmed.")
+
+    target = plan.exact_start or plan.preferred_start
+    if target is not None:
+        requested = target.astimezone(ZoneInfo(org_tz)).strftime("%A at %-I:%M %p")
+        if result.get("requested_time_available"):
+            return f"{requested} works for everyone I could check.{unknown_note}"
+        if proposal:
+            best = _fmt(proposal["start"], org_tz, "%A at %-I:%M %p")
+            return (f"{requested} doesn't work for everyone I could check. "
+                    f"The best available option is {best}.{unknown_note}")
+        return f"{requested} doesn't work for everyone I could check.{unknown_note}"
+
+    if proposal:
+        best = _fmt(proposal["start"], org_tz, "%A at %-I:%M %p")
+        return f"The best available option is {best}.{unknown_note}"
+    return f"I couldn't find a time that works in that window.{unknown_note}"
+
+
 def _do_book(user, org_tz, *, title, location_type, start_iso, end_iso, attendee_emails):
     location = "Virtual" if location_type == "virtual" else "In person"
     event = gcal.insert_event(
@@ -493,10 +527,8 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
         )
 
     result, people, plan = _run_search(user, org_tz, req.attendees, ctx, now)
-    summary = _availability_summary(result, people, plan, org_tz)
-    reply = llm.answer_question(req.text, summary)
     result["action"] = "search"
-    result["answer"] = reply or "Here's the best I found."
+    result["answer"] = _availability_answer(result, plan, org_tz)
     return result
 
 
