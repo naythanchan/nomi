@@ -30,6 +30,16 @@
       return { ok: false, status: 0, data: { detail: "Couldn't reach Nomi. Check your connection and try again." } };
     }
   }
+  async function searchApi(path, body) {
+    const opts = {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    };
+    let response = await api(path, opts);
+    // Searches are read-only and safe to repeat. Never apply this to booking.
+    if (response.status >= 500) response = await api(path, opts);
+    return response;
+  }
   const fmtTime = (iso, tz) => new Date(iso).toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
   const fmtDay = (iso, tz) => new Date(iso).toLocaleDateString("en-US", { timeZone: tz, weekday: "long", month: "short", day: "numeric" });
   const fmtDayShort = (iso, tz) => new Date(iso).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" });
@@ -170,9 +180,7 @@
     const requestId = ++state.scheduleSeq;
     setScheduleBusy(true);
     const started = Date.now();
-    const { ok, status, data } = await api(path, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-    });
+    const { ok, status, data } = await searchApi(path, body);
     const wait = Math.max(0, 700 - (Date.now() - started));
     if (!REDUCED && wait) await new Promise((resolve) => setTimeout(resolve, wait));
     if (requestId !== state.scheduleSeq || state.mode !== "schedule") return;
@@ -320,9 +328,8 @@
     $("#askq").value = "";
     const requestId = ++state.askSeq;
     setAskBusy(true);
-    const { ok, status, data } = await api("/api/ask", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, attendees: state.chips.slice(), context: state.ctx }),
+    const { ok, status, data } = await searchApi("/api/ask", {
+      text, attendees: state.chips.slice(), context: state.ctx,
     });
     if (requestId !== state.askSeq || state.mode !== "ask") return;
     userTurn.classList.remove("pending");
