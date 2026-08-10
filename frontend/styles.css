@@ -126,7 +126,7 @@ button{ font-family:inherit; cursor:pointer; }
 .fin:focus, .fin:focus-visible{ outline:none; border-radius:0; border-bottom-color:var(--accent); }
 .fin::placeholder{ color:var(--faint); }
 #nl{ margin-top:2px; }
-.frow{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding-top:10px; border-top:1px solid var(--line); flex-wrap:wrap; }
+.frow{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding-top:10px; flex-wrap:wrap; }
 .dur{ display:inline-flex; align-items:center; gap:11px; }
 .dur .val{ font-size:13px; color:var(--soft); min-width:46px; }
 .range{ -webkit-appearance:none; appearance:none; width:80px; height:2px; border-radius:2px; background:var(--line-2); cursor:pointer; }
