@@ -352,6 +352,12 @@
   function renderAskTurn(d) {
     const tz = d.org_timezone;
     let html = `<p class="ask-reply">${esc(d.answer || "")}</p>`;
+    const windows = d.windows || [];
+    if (windows.length) {
+      html += `<div class="availability-windows">` + windows.map((w) =>
+        `<div><span>${fmtDayShort(w.start, tz)}</span><b>${fmtTime(w.start, tz)}–${fmtTime(w.end, tz)}</b></div>`
+      ).join("") + `</div>`;
+    }
     const p = d.proposal;
     if (p) {
       html += `<div class="a-prop"><b>${fmtDay(p.start, tz)}</b> · ${fmtTime(p.start, tz)}–${fmtTime(p.end, tz)}${(d.intent && d.intent.location_type === "in-person") ? " · in person" : ""}</div>`;

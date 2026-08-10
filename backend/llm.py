@@ -82,7 +82,7 @@ def interpret_scheduling_intent(text: str, org_tz: str,
 
     Returns a dict (never attendees). It CLASSIFIES the day reference — it does
     NOT compute calendar dates; Python does that deterministically. Keys:
-      action            "search" | "book" | "cancel" | "explain"
+      action            "search" | "windows" | "book" | "cancel" | "explain"
       purpose           str ("" if none)
       weekday           "monday".."sunday" | null   (a named weekday)
       day_offset        int | null                  (0=today, 1=tomorrow, 2=...)
@@ -113,7 +113,9 @@ def interpret_scheduling_intent(text: str, org_tz: str,
         f"Today is {today}. The user's timezone is {org_tz}.\n"
         + prop_line +
         "Keys (use null when not mentioned):\n"
-        '  "action": "search" | "book" | "cancel" | "explain". Use "explain" '
+        '  "action": "search" | "windows" | "book" | "cancel" | "explain". '
+        'Use "windows" when the user asks for free, open, empty, or available '
+        'windows/ranges rather than one recommended meeting time. Use "explain" '
         'when the user asks what window was searched, why a time was rejected, or '
         'asks about the reasoning behind the previous result. Default "search".\n'
         '  "purpose": short noun like "lunch", "dinner", "sync" ("" if none)\n'
@@ -155,6 +157,10 @@ def interpret_scheduling_intent(text: str, org_tz: str,
     if not isinstance(data, dict):
         return None
     data.setdefault("action", "search")
+    lowered = text.lower()
+    if (any(word in lowered for word in ("window", "windows", "availability")) and
+            any(word in lowered for word in ("free", "empty", "open", "available"))):
+        data["action"] = "windows"
     return data
 
 

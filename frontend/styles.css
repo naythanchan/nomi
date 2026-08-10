@@ -114,6 +114,9 @@ button{ font-family:inherit; cursor:pointer; }
 .ask-people .p{ display:flex; align-items:center; gap:8px; color:var(--soft); }
 .ask-people .p .d{ width:7px; height:7px; border-radius:50%; }
 .ask-people .p b{ color:var(--ink); font-weight:500; }
+.availability-windows{ margin-top:12px; display:flex; flex-direction:column; gap:7px; }
+.availability-windows div{ display:flex; justify-content:space-between; gap:18px; color:var(--soft); }
+.availability-windows b{ color:var(--ink); font-weight:500; font-variant-numeric:tabular-nums; }
 .confirm.mini{ margin-top:12px; padding:7px 14px; font-size:13px; }
 
 /* couldn't-check-calendar flag + checked line */

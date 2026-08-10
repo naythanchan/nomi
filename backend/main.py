@@ -280,6 +280,44 @@ def _requested_blockers(people, start, end, location_type):
     return blockers
 
 
+def _availability_windows(people, plan, org_tz):
+    """Return contiguous shared-free ranges, using the scheduler's hard rules."""
+    tz = ZoneInfo(org_tz)
+    step = timedelta(minutes=SETTINGS["slot"]["interval_minutes"])
+    minimum = timedelta(minutes=plan.duration_minutes)
+    start = plan.window_start.astimezone(tz)
+    end = plan.window_end.astimezone(tz)
+    cursor = start.replace(second=0, microsecond=0)
+    if cursor.minute % 15:
+        cursor += timedelta(minutes=15 - cursor.minute % 15)
+
+    windows = []
+    open_start = None
+    while cursor < end:
+        segment_end = min(cursor + step, end)
+        local_minute = cursor.hour * 60 + cursor.minute
+        in_band = ((plan.day_lo_min is None or local_minute >= plan.day_lo_min) and
+                   (plan.day_hi_min is None or
+                    local_minute + int(step.total_seconds() / 60) <= plan.day_hi_min))
+        free = (in_band and segment_end.date() == cursor.date() and
+                scheduler.slot_free(
+                    people, cursor, segment_end, plan.location_type, SETTINGS,
+                    enforce_waking=not plan.relax_hours,
+                ))
+        if free and open_start is None:
+            open_start = cursor
+        if not free and open_start is not None:
+            if cursor - open_start >= minimum:
+                windows.append({"start": open_start.isoformat(), "end": cursor.isoformat()})
+            open_start = None
+        cursor = segment_end
+        if len(windows) >= 12:
+            break
+    if open_start is not None and end - open_start >= minimum and len(windows) < 12:
+        windows.append({"start": open_start.isoformat(), "end": end.isoformat()})
+    return windows
+
+
 def _run_search(user, org_tz, attendee_tokens, ctx, now):
     """Shared scheduling engine for both Schedule and Ask.
 
@@ -581,7 +619,7 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
             "context": ctx,
         }
 
-    # --- search / refine ---
+    # --- search / refine / list shared availability windows ---
     if not _has_when(ctx):
         raise HTTPException(
             status_code=422,
@@ -589,6 +627,20 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
         )
 
     result, people, plan = _run_search(user, org_tz, req.attendees, ctx, now)
+    if action == "windows":
+        windows = _availability_windows(people, plan, org_tz)
+        result["action"] = "windows"
+        result["windows"] = windows
+        result["proposal"] = None
+        result["alternatives"] = []
+        result["context"]["current_proposal"] = None
+        if windows:
+            result["answer"] = "Here are the shared free windows I found."
+        else:
+            result["answer"] = "I couldn't find a shared free window in that period."
+        if result.get("calendar_unknown"):
+            result["answer"] += " This only reflects the calendars I could check."
+        return result
     result["action"] = "search"
     result["answer"] = _availability_answer(result, plan, org_tz)
     return result
