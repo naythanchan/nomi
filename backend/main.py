@@ -166,6 +166,22 @@ def _has_when(ctx):
     return any(name in purpose for name in intents.PURPOSE_DAYPARTS)
 
 
+def _is_contextual_windows_followup(text, prior):
+    """A windows question with no new timing words should reuse the prior window."""
+    lowered = (text or "").lower()
+    asks_windows = (
+        any(word in lowered for word in ("window", "windows", "availability")) and
+        any(word in lowered for word in ("free", "empty", "open", "available"))
+    )
+    timing_words = (
+        "today", "tomorrow", "tmrw", "morning", "afternoon", "evening", "night",
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        "mon", "tue", "wed", "thu", "fri", "sat", "sun", "am", "pm",
+    )
+    introduces_timing = any(word in lowered for word in timing_words) or bool(re.search(r"\d", lowered))
+    return asks_windows and _has_when(prior) and not introduces_timing
+
+
 def _known_users(emails):
     """Map email -> {id, name, tz, has_token} for attendees who've signed into Nomi."""
     if not emails:
@@ -574,8 +590,11 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
 
     prior = dict(req.context or {})
     has_prop = bool(prior.get("current_proposal"))
-    intent = llm.interpret_scheduling_intent(
-        req.text, org_tz, has_proposal=has_prop, history=req.history)
+    if _is_contextual_windows_followup(req.text, prior):
+        intent = {"action": "windows"}
+    else:
+        intent = llm.interpret_scheduling_intent(
+            req.text, org_tz, has_proposal=has_prop, history=req.history)
     if not intent:
         raise HTTPException(status_code=422, detail="Couldn't understand that. Try rephrasing.")
 
