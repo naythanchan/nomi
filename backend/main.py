@@ -65,7 +65,10 @@ def callback(request: Request):
     if not expected_state or not returned_state or not secrets.compare_digest(expected_state, returned_state):
         return JSONResponse({"error": "sign-in state mismatch; please try again"}, status_code=400)
     try:
-        token = auth.handle_callback(str(request.url), expected_state)
+        # Railway terminates TLS before forwarding to the app, so request.url can
+        # appear to be http:// internally. OAuthlib requires the public HTTPS URL.
+        authorization_response_url = f"{config.REDIRECT_URI}?{request.url.query}"
+        token = auth.handle_callback(authorization_response_url, expected_state)
     except Exception as e:
         return JSONResponse({"error": f"sign-in failed: {e}"}, status_code=400)
     resp = RedirectResponse(config.BASE_URL + "/")
