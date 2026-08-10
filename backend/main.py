@@ -4,6 +4,7 @@ Serves the frontend, handles Google sign-in, and exposes the scheduling API.
 Booking creates a real Google Calendar event and invites everyone immediately.
 """
 import re
+import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -46,14 +47,25 @@ def current_user(request: Request):
 
 @app.get("/auth/login")
 def login():
-    url, _state = auth.authorization_url()
-    return RedirectResponse(url)
+    url, state = auth.authorization_url()
+    resp = RedirectResponse(url)
+    resp.set_cookie(
+        "cw_oauth_state", state,
+        httponly=True, samesite="lax",
+        secure=config.BASE_URL.startswith("https://"),
+        max_age=600, path="/auth",
+    )
+    return resp
 
 
 @app.get("/auth/callback")
 def callback(request: Request):
+    expected_state = request.cookies.get("cw_oauth_state")
+    returned_state = request.query_params.get("state")
+    if not expected_state or not returned_state or not secrets.compare_digest(expected_state, returned_state):
+        return JSONResponse({"error": "sign-in state mismatch; please try again"}, status_code=400)
     try:
-        token = auth.handle_callback(str(request.url))
+        token = auth.handle_callback(str(request.url), expected_state)
     except Exception as e:
         return JSONResponse({"error": f"sign-in failed: {e}"}, status_code=400)
     resp = RedirectResponse(config.BASE_URL + "/")
@@ -63,6 +75,7 @@ def callback(request: Request):
         secure=config.BASE_URL.startswith("https://"),
         max_age=config.SESSION_DAYS * 86400, path="/",
     )
+    resp.delete_cookie("cw_oauth_state", path="/auth")
     return resp
 
 
@@ -265,8 +278,9 @@ def _run_search(user, org_tz, attendee_tokens, ctx, now):
         "alternatives": [_slot_dict(s) for s in alternatives[:5]],
         "participants": [
             {"name": p.name, "email": p.email, "timezone": p.tz,
-             "calendar_status": statuses.get(p.email.lower(), "freebusy")}
-            for p in people
+             "calendar_status": statuses.get(p.email.lower(), "freebusy"),
+             "organizer": i == 0}
+            for i, p in enumerate(people)
         ],
         "unresolved": unresolved,
         "calendar_unknown": unknown,
@@ -292,9 +306,10 @@ def _availability_summary(result, people, plan, org_tz):
         t_start = target.astimezone(tz)
         t_end = t_start + timedelta(minutes=plan.duration_minutes)
         when = t_start.strftime("%A %b %-d, %-I:%M %p")
-        verdict = ("that exact time works for everyone I can check"
+        request_label = "exact time" if plan.exact_start else "requested time"
+        verdict = (f"that {request_label} works for everyone I can check"
                    if result.get("requested_time_available")
-                   else "that exact time does NOT work")
+                   else f"that {request_label} does NOT work")
         lines.append(f"The user asked specifically about {when} — {verdict}.")
         for p in people:
             if p.email in result["calendar_unknown"]:
@@ -309,7 +324,7 @@ def _availability_summary(result, people, plan, org_tz):
         start = datetime.fromisoformat(prop["start"])
         end = datetime.fromisoformat(prop["end"])
         when = _fmt(prop["start"], org_tz, "%A %b %-d, %-I:%M %p")
-        label = ("Closest alternative that works" if result.get("requested_time_available") is False
+        label = ("Best alternative that works" if result.get("requested_time_available") is False
                  else "Recommended time")
         lines.append(f"{label}: {when} for {plan.duration_minutes} min "
                      f"({plan.location_type}).")
@@ -328,8 +343,8 @@ def _availability_summary(result, people, plan, org_tz):
                 lines.append(f"- {p.name}: calendar NOT visible")
 
     if result.get("requested_time_available") is False:
-        lines.append("Note: the EXACT time requested is not free — the time above is the "
-                     "closest alternative.")
+        lines.append("Note: the requested time is not free — the time above is the "
+                     "best ranked alternative.")
     if result["alternatives"]:
         alts = ", ".join(_fmt(a["start"], org_tz, "%a %-I:%M %p")
                          for a in result["alternatives"][:3])
@@ -449,7 +464,13 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
 @app.post("/api/book")
 def api_book(req: BookRequest, user=Depends(current_user)):
     org_tz = user.get("timezone") or config.DEFAULT_TIMEZONE
-    attendee_emails = [e for e in req.attendees if e and e.lower() != user["email"].lower()]
+    attendee_emails, unresolved, bad = _resolve_attendees(user, req.attendees)
+    if bad:
+        raise HTTPException(status_code=400, detail="Not a valid email: " + ", ".join(bad))
+    if unresolved:
+        raise HTTPException(status_code=400, detail="Couldn't identify: " + ", ".join(unresolved))
+    if req.end <= req.start:
+        raise HTTPException(status_code=400, detail="Meeting end must be after its start.")
 
     try:
         event = gcal.insert_event(

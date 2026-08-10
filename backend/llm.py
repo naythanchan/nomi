@@ -159,7 +159,11 @@ def answer_question(question: str, availability_summary: str) -> str | None:
         "status. Crucial: if a calendar could NOT be checked, do NOT say that person "
         "is free; say you couldn't check them and can still invite them. Prefer "
         "phrasing like \"everyone I could check is free\" over \"everyone is free\" "
-        "whenever any calendar is unknown. Be brief and warm: say plainly whether it "
+        "whenever any calendar is unknown. No invitation has been sent yet: never say "
+        "someone is invited, only that the organizer can still invite them. Do not "
+        "address an unknown attendee as \"you\" or say \"I can invite\"; tell the organizer "
+        "\"you can still invite them\". Use complete sentences and standard capitalization. "
+        "Be brief and warm: say plainly whether it "
         "works, name who's busy or unknown, and if it doesn't work suggest an "
         "alternative. Two or three sentences at most."
     )

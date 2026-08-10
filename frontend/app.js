@@ -13,14 +13,22 @@
     resp: null,           // last schedule response
     sel: 0,               // selected slot index (0 = proposal)
     ctx: {},              // conversational scheduling context (Ask mode)
+    scheduleSeq: 0,       // invalidates stale async responses
+    askSeq: 0,
+    scheduleBusy: false,
+    askBusy: false,
   };
 
   // ---------- helpers ----------
   async function api(path, opts) {
-    const res = await fetch(path, { credentials: "include", ...opts });
-    let data = null;
-    try { data = await res.json(); } catch { /* no body */ }
-    return { ok: res.ok, status: res.status, data };
+    try {
+      const res = await fetch(path, { credentials: "include", ...opts });
+      let data = null;
+      try { data = await res.json(); } catch { /* no body */ }
+      return { ok: res.ok, status: res.status, data };
+    } catch {
+      return { ok: false, status: 0, data: { detail: "Couldn't reach Nomi. Check your connection and try again." } };
+    }
   }
   const fmtTime = (iso, tz) => new Date(iso).toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
   const fmtDay = (iso, tz) => new Date(iso).toLocaleDateString("en-US", { timeZone: tz, weekday: "long", month: "short", day: "numeric" });
@@ -35,12 +43,23 @@
     const [h, m] = s.split(":").map(Number);
     return h + m / 60;
   }
-  const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
   const firstName = (n) => (n || "").split(" ")[0] || n;
+  const participantName = (p) => p.organizer ? "You" : firstName(p.name);
 
   // ---------- people chips (shared) ----------
   function addChips(raw) {
-    (raw || "").split(/[,\s]+/).map((x) => x.trim()).filter(Boolean).forEach((tok) => {
+    const value = (raw || "").trim();
+    // Commas are the unambiguous separator. Preserve spaces in directory names;
+    // still accept a pasted whitespace-separated list when every item is an email.
+    let tokens = value.includes(",") ? value.split(",") : [value];
+    const words = value.split(/\s+/).filter(Boolean);
+    if (!value.includes(",") && words.length > 1 && words.every((x) => x.includes("@"))) {
+      tokens = words;
+    }
+    tokens.map((x) => x.trim()).filter(Boolean).forEach((tok) => {
       const key = tok.toLowerCase();
       if (!state.chips.some((c) => c.toLowerCase() === key)) state.chips.push(tok);
     });
@@ -62,10 +81,31 @@
   const clock = () => $("#clock");
   function happy() { if (REDUCED) return; const c = clock(); c.classList.remove("happy"); void c.offsetWidth; c.classList.add("happy"); }
   function think(on) { if (!REDUCED) clock().classList.toggle("thinking", on); }
+  function syncThinking() { think(state.scheduleBusy || state.askBusy); }
+  function setScheduleBusy(on) {
+    state.scheduleBusy = on;
+    const btn = $("#go");
+    btn.disabled = on; btn.setAttribute("aria-busy", String(on));
+    btn.textContent = on ? "Finding times…" : "Find a time";
+    syncThinking();
+  }
+  function setAskBusy(on) {
+    state.askBusy = on;
+    const btn = $("#askGo");
+    btn.disabled = on; btn.setAttribute("aria-busy", String(on));
+    btn.textContent = on ? "Checking…" : "Ask Nomi";
+    syncThinking();
+  }
 
   // ---------- bubble / mode state ----------
-  function openBubble() { $("#bubble").classList.add("open"); $("#hint").classList.add("gone"); }
-  function closeBubble() { $("#bubble").classList.remove("open"); }
+  function openBubble() {
+    $("#bubble").classList.add("open"); $("#hint").classList.add("gone");
+    $("#pet").setAttribute("aria-expanded", "true");
+  }
+  function closeBubble() {
+    $("#bubble").classList.remove("open");
+    $("#pet").setAttribute("aria-expanded", "false");
+  }
 
   function applyMode() {
     const authed = !!state.me;
@@ -86,18 +126,31 @@
       $("#result").classList.remove("show");
     }
     renderChips();
-    document.querySelectorAll("#modes button").forEach((b) =>
-      b.classList.toggle("on", b.dataset.mode === state.mode));
+    document.querySelectorAll("#modes button").forEach((b) => {
+      const on = b.dataset.mode === state.mode;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
   }
 
   function setMode(m) {
+    if (m === state.mode) return;
+    // A response from the mode we're leaving must not redraw stale UI later.
+    state.scheduleSeq += 1;
+    state.askSeq += 1;
+    if (state.askBusy) $("#chat .c-me.pending")?.remove();
+    setScheduleBusy(false);
+    setAskBusy(false);
     state.mode = m;
-    if (m === "ask") { state.ctx = {}; $("#chat").innerHTML = ""; }
+    // A result belongs to Schedule mode. Leaving it visible underneath Ask
+    // creates two competing interfaces and duplicate actions.
+    $("#result").classList.remove("show");
     applyMode();
   }
 
   // ---------- schedule ----------
   async function go() {
+    if (state.scheduleBusy) return;
     $("#formErr").hidden = true;
     flushInput();
     const attendees = state.chips.slice();
@@ -114,23 +167,24 @@
                duration_minutes: state.duration, location_type: state.location };
     }
 
-    think(true);
+    const requestId = ++state.scheduleSeq;
+    setScheduleBusy(true);
     const started = Date.now();
     const { ok, status, data } = await api(path, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     const wait = Math.max(0, 700 - (Date.now() - started));
-    setTimeout(() => {
-      think(false);
-      if (status === 401) { state.me = null; applyMode(); return; }
-      if (!ok) { showErr("#formErr", (data && data.detail) || "Something went wrong. Try again."); return; }
-      state.resp = data;
-      state.sel = 0;
-      $("#form").hidden = true;
-      $("#result").classList.add("show");
-      renderResult();
-      happy();
-    }, REDUCED ? 0 : wait);
+    if (!REDUCED && wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    if (requestId !== state.scheduleSeq || state.mode !== "schedule") return;
+    setScheduleBusy(false);
+    if (status === 401) { state.me = null; applyMode(); return; }
+    if (!ok) { showErr("#formErr", (data && data.detail) || "Something went wrong. Try again."); return; }
+    state.resp = data;
+    state.sel = 0;
+    $("#form").hidden = true;
+    $("#result").classList.add("show");
+    renderResult();
+    happy();
   }
 
   // combined [proposal, ...alternatives] with a stable index
@@ -146,7 +200,7 @@
     const checked = (r.participants || []).filter((p) => !unknown.includes(p.email));
     let html = "";
     if (checked.length) {
-      html += `<p class="r-checked">Checked ${esc(checked.map((p) => firstName(p.name)).join(", "))}.</p>`;
+      html += `<p class="r-checked">Checked ${esc(checked.map(participantName).join(", "))}.</p>`;
     }
     if (unknown.length) {
       html += `<p class="r-flag">⚠ Couldn't check ${unknown.length === 1 ? "this calendar" : "these calendars"}: ${esc(unknown.join(", "))} — inviting anyway.</p>`;
@@ -159,7 +213,7 @@
     const zones = [...new Set(people.map((p) => p.timezone))];
     if (loc !== "virtual" || zones.length <= 1) return "";
     const orgZone = r.org_timezone, groups = {};
-    people.forEach((p) => { (groups[p.timezone] = groups[p.timezone] || []).push(firstName(p.name)); });
+    people.forEach((p) => { (groups[p.timezone] = groups[p.timezone] || []).push(participantName(p)); });
     const keys = Object.keys(groups).sort((a, b) => (b === orgZone) - (a === orgZone));
     return '<div class="r-tz">' + keys.map((z) => {
       const names = groups[z];
@@ -189,12 +243,12 @@
     // "requested time not available" banner
     let banner = "";
     if (r.requested_time_available === false && state.sel === 0) {
-      banner = `<p class="r-warn">That exact time isn't free — here's the closest that works.</p>`;
+      banner = `<p class="r-warn">That time isn't free — here's the best alternative.</p>`;
     }
 
     const others = all.map((slot, i) => ({ slot, i })).filter((o) => o.i !== state.sel);
     const alts = others.length ? '<div class="alts">' + others.map(({ slot, i }) =>
-      `<button class="alt" data-i="${i}"><span class="a-day">${fmtDayShort(slot.start, orgTz)}</span><span class="a-time">${fmtTime(slot.start, orgTz)}</span></button>`).join("") + "</div>" : "";
+      `<button class="alt" data-i="${i}"${r.booked ? " disabled" : ""}><span class="a-day">${fmtDayShort(slot.start, orgTz)}</span><span class="a-time">${fmtTime(slot.start, orgTz)}</span></button>`).join("") + "</div>" : "";
 
     R.innerHTML = `
       ${banner}
@@ -204,6 +258,7 @@
       ${tzLines(s, r, loc)}
       ${participantsLine(r)}
       <div class="r-actions"><button class="confirm" id="confirm">Confirm &amp; invite</button><button class="again" id="again">Start over</button></div>
+      <p class="err" id="bookErr" hidden></p>
       ${alts}`;
     $("#confirm").onclick = book;
     $("#again").onclick = toForm;
@@ -215,7 +270,7 @@
     const emails = r.participants.map((p) => p.email).filter((em) => em !== state.me.email);
     const loc = (r.intent && r.intent.location_type) || state.location;
     btn.disabled = true; btn.textContent = "Sending…";
-    const { ok } = await api("/api/book", {
+    const { ok, data } = await api("/api/book", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: (r.intent && r.intent.title) || "Meeting",
@@ -223,8 +278,22 @@
         location_type: loc, attendees: emails, start: s.start, end: s.end,
       }),
     });
-    if (ok) { btn.textContent = "✓ Invites sent"; btn.style.filter = "brightness(.9)"; happy(); }
-    else { btn.disabled = false; btn.textContent = "Try again"; }
+    if (ok) {
+      r.booked = true;
+      btn.textContent = "✓ Invites sent"; btn.style.filter = "brightness(.9)";
+      $("#resInner").querySelectorAll(".alt").forEach((x) => { x.disabled = true; });
+      if (data && data.html_link) {
+        const a = document.createElement("a");
+        a.className = "ask-link booked-link"; a.href = data.html_link;
+        a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open in Google Calendar →";
+        btn.closest(".r-actions").after(a);
+      }
+      happy();
+    }
+    else {
+      btn.disabled = false; btn.textContent = "Try again";
+      showErr("#bookErr", (data && data.detail) || "Couldn't send the invites. Try again.");
+    }
   }
 
   function toForm() { $("#result").classList.remove("show"); $("#form").hidden = false; }
@@ -240,20 +309,24 @@
   }
 
   async function ask() {
+    if (state.askBusy) return;
     $("#askErr").hidden = true;
     flushInput();
     const text = $("#askq").value.trim();
     if (!text) { showErr("#askErr", "Ask a question first."); return; }
     if (!state.chips.length) { showErr("#askErr", "Add at least one person first."); return; }
 
-    chatBubble("c-me", esc(text));
+    const userTurn = chatBubble("c-me pending", esc(text));
     $("#askq").value = "";
-    think(true);
+    const requestId = ++state.askSeq;
+    setAskBusy(true);
     const { ok, status, data } = await api("/api/ask", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, attendees: state.chips.slice(), context: state.ctx }),
     });
-    think(false);
+    if (requestId !== state.askSeq || state.mode !== "ask") return;
+    userTurn.classList.remove("pending");
+    setAskBusy(false);
     if (status === 401) { state.me = null; applyMode(); return; }
     if (!ok) { showErr("#askErr", (data && data.detail) || "Something went wrong."); return; }
 
@@ -279,7 +352,9 @@
         const un = unknown.includes(pt.email);
         const color = un ? "var(--amber)" : "var(--accent)";
         const label = un ? "couldn't check" : "free";
-        return `<span class="p"><span class="d" style="background:${color}"></span><b>${esc(firstName(pt.name))}</b> · ${label}</span>`;
+        const name = participantName(pt);
+        const detail = un ? ` title="Google doesn't expose this calendar to the signed-in account"` : "";
+        return `<span class="p"${detail}><span class="d" style="background:${color}"></span><b>${esc(name)}</b> · ${label}</span>`;
       }).join("");
       if (dots) html += `<div class="ask-people">${dots}</div>`;
       const alts = (d.alternatives || []);
@@ -324,14 +399,25 @@
       }),
     });
     if (ok) {
-      btn.textContent = "✓ Invites sent"; happy();
+      btn.textContent = "✓ Invites sent";
+      delete state.ctx.current_proposal;
+      $("#chat").querySelectorAll(".a-chip, [data-book], [data-book2]").forEach((x) => {
+        x.disabled = true;
+      });
       if (data && data.html_link) {
         const a = document.createElement("a");
-        a.className = "ask-link"; a.href = data.html_link; a.target = "_blank"; a.rel = "noopener";
+        a.className = "ask-link booked-link"; a.href = data.html_link; a.target = "_blank"; a.rel = "noopener";
         a.textContent = "Open in Google Calendar →";
         btn.after(a);
       }
-    } else { btn.disabled = false; btn.textContent = "Try again"; }
+      happy();
+    } else {
+      btn.disabled = false; btn.textContent = "Try again";
+      const err = document.createElement("span");
+      err.className = "book-inline-error";
+      err.textContent = (data && data.detail) || "Couldn't send the invites.";
+      btn.after(err);
+    }
   }
 
   function showErr(sel, msg) { const el = $(sel); el.textContent = msg; el.hidden = false; }
@@ -359,8 +445,12 @@
   });
   $("#loc").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
-    document.querySelectorAll("#loc button").forEach((x) => x.classList.remove("on"));
-    b.classList.add("on"); state.location = b.dataset.loc;
+    document.querySelectorAll("#loc button").forEach((x) => {
+      const on = x === b;
+      x.classList.toggle("on", on);
+      x.setAttribute("aria-pressed", String(on));
+    });
+    state.location = b.dataset.loc;
   });
   $("#theme").addEventListener("click", () => {
     const c = document.documentElement.getAttribute("data-theme");
@@ -370,6 +460,9 @@
   $("#signout").addEventListener("click", () => { window.location.href = "/auth/logout"; });
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".bubble") && !e.target.closest(".pet")) closeBubble();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { closeBubble(); $("#pet").focus(); }
   });
 
   // ---------- init ----------

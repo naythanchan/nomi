@@ -42,3 +42,23 @@ Calendar invites.
 - Attendee timezones are known for people who've signed into Nomi; others
   are left unknown (never guessed) for the timezone-kindness scoring.
 - `client_secret.json`, `.env`, and the DB are git-ignored — keep them out of commits.
+
+## Deploy with Supabase + Railway
+
+1. In Supabase, copy the transaction-pooler Postgres URL (port 6543) and add
+   `?sslmode=require`.
+2. In Railway, create a service from this GitHub repository. Railway detects the
+   root `Dockerfile`; `railway.json` configures the health check and restart policy.
+3. Generate a Railway public domain, then set these service variables:
+   - `DATABASE_URL` — the Supabase transaction-pooler URL
+   - `BASE_URL` — the generated Railway URL, without a trailing slash
+   - `GOOGLE_CLIENT_SECRET_JSON` — the complete Google OAuth client JSON
+   - `OPENAI_API_KEY` — enables natural-language scheduling
+   - `OPENAI_MODEL` — optional; defaults to `gpt-4.1-nano`
+   - `SECRET_KEY` — a random value of at least 32 bytes
+4. Add `<BASE_URL>/auth/callback` as an authorized redirect URI in Google Cloud.
+5. While the OAuth consent screen is in testing, add each intended user as a
+   Google OAuth test user.
+
+The app creates its three tables automatically during startup. Supabase TLS is
+enforced by the database engine configuration.

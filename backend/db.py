@@ -15,8 +15,19 @@ from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 
 from config import DATABASE_URL
 
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=_connect_args, future=True)
+if DATABASE_URL.startswith("sqlite"):
+    _connect_args = {"check_same_thread": False}
+else:
+    # Supabase requires TLS. Supplying this as a driver option also covers
+    # connection strings copied without an explicit ?sslmode=require suffix.
+    _connect_args = {"sslmode": "require", "connect_timeout": 10}
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=_connect_args,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    future=True,
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 

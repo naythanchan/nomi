@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nomi</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%F0%9F%95%90%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/styles.css?v=4">
+  <link rel="stylesheet" href="/styles.css?v=6">
 </head>
 <body>
   <header class="top">
@@ -18,7 +18,7 @@
   </header>
 
   <main class="stage">
-    <button class="pet" id="pet" aria-label="Tap to schedule a meeting">
+    <button class="pet" id="pet" aria-label="Tap to schedule a meeting" aria-expanded="false" aria-controls="bubble">
       <span class="pet-inner">
         <svg class="clock" id="clock" viewBox="0 0 360 320" aria-hidden="true">
           <ellipse class="pshadow" cx="180" cy="287" rx="96" ry="9"/>
@@ -48,12 +48,12 @@
       <!-- people first: shared by both modes -->
       <div class="people" id="people" hidden>
         <div class="chips" id="chips"></div>
-        <input class="fin" id="chipInput" placeholder="Add people by email, then Enter">
+        <input class="fin" id="chipInput" placeholder="Add people…">
       </div>
 
       <!-- mode toggle (only when AI is available) -->
       <div class="modes" id="modes" hidden>
-        <button data-mode="schedule" class="on">Schedule</button><span class="msep">·</span><button data-mode="ask">Ask</button>
+        <button data-mode="schedule" class="on" aria-pressed="true">Schedule</button><span class="msep">·</span><button data-mode="ask" aria-pressed="false">Ask</button>
       </div>
 
       <!-- schedule form -->
@@ -61,26 +61,26 @@
         <!-- title (when AI is off) -->
         <input class="fin" id="what" placeholder="What's the meeting?" hidden>
         <!-- timing, parsed by AI (when AI is on) -->
-        <input class="fin" id="nl" hidden placeholder="Add timing — “lunch wed at 1”, “45 min” (optional)">
+        <input class="fin" id="nl" hidden placeholder="What should Nomi find?">
         <div class="frow" id="frow">
           <div class="dur">
             <input type="range" class="range" id="dur" min="15" max="120" step="5" value="30" aria-label="Duration">
             <span class="val" id="durVal">30 min</span>
           </div>
           <div class="loc" id="loc" role="group" aria-label="Location">
-            <button data-loc="virtual" class="on">Virtual</button><span class="sep">·</span><button data-loc="in-person">In person</button>
+            <button data-loc="virtual" class="on" aria-pressed="true">Virtual</button><span class="sep">·</span><button data-loc="in-person" aria-pressed="false">In person</button>
           </div>
         </div>
-        <button class="go" id="go">Go</button>
+        <button class="go" id="go">Find a time</button>
         <p class="err" id="formErr" hidden></p>
       </div>
 
       <!-- ask / conversational -->
       <div class="ask" id="ask" hidden>
-        <div class="chat" id="chat"></div>
+        <div class="chat" id="chat" role="log" aria-live="polite" aria-relevant="additions"></div>
         <textarea class="fin" id="askq" rows="2"
           placeholder="“Are they free for dinner Thursday?”"></textarea>
-        <button class="go" id="askGo">Ask</button>
+        <button class="go" id="askGo">Ask Nomi</button>
         <p class="err" id="askErr" hidden></p>
       </div>
 
@@ -89,6 +89,6 @@
     </div>
   </main>
 
-  <script src="/app.js?v=4"></script>
+  <script src="/app.js?v=10"></script>
 </body>
 </html>

@@ -15,6 +15,8 @@ from db import db_session, User, Session
 # ---------- client secret helpers ----------
 
 def _client_conf():
+    if config.GOOGLE_CLIENT_SECRET_JSON:
+        return json.loads(config.GOOGLE_CLIENT_SECRET_JSON)
     with open(config.CLIENT_SECRET_FILE) as f:
         return json.load(f)
 
@@ -25,11 +27,12 @@ def _client_id_secret():
     return node.get("client_id"), node.get("client_secret")
 
 
-def _flow():
-    return Flow.from_client_secrets_file(
-        config.CLIENT_SECRET_FILE,
+def _flow(state=None):
+    return Flow.from_client_config(
+        _client_conf(),
         scopes=config.GOOGLE_SCOPES,
         redirect_uri=config.REDIRECT_URI,
+        state=state,
     )
 
 
@@ -45,9 +48,9 @@ def authorization_url():
     return url, state
 
 
-def handle_callback(authorization_response_url: str):
+def handle_callback(authorization_response_url: str, expected_state: str):
     """Exchange the code, upsert the user + tokens, and return a new session token."""
-    flow = _flow()
+    flow = _flow(state=expected_state)
     flow.fetch_token(authorization_response=authorization_response_url)
     creds = flow.credentials
 

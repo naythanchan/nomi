@@ -1,0 +1,9 @@
+.git
+.gitignore
+backend/.venv
+backend/.env
+backend/client_secret.json
+backend/nomi.db
+**/__pycache__
+**/*.pyc
+.DS_Store
