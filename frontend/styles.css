@@ -93,7 +93,7 @@ button{ font-family:inherit; cursor:pointer; }
 .modes .msep{ display:block; color:var(--line-2); font-size:10px; }
 
 /* ask / conversational */
-.ask #askq, .ask #askq:focus, .ask #askq:focus-visible{ border-bottom-color:transparent; }
+.ask #askq, .ask #askq:focus, .ask #askq:focus-visible{ border-bottom-color:transparent; resize:none; }
 .chat{ display:flex; flex-direction:column; gap:12px; max-height:min(42vh, 340px); overflow-y:auto; margin-bottom:14px;
   scrollbar-width:thin; scrollbar-color:var(--line-2) transparent; }
 .chat:empty{ display:none; }
