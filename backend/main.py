@@ -133,6 +133,31 @@ def _resolve_attendees(user, tokens):
     return resolved, unresolved, bad
 
 
+def _require_valid_attendees(user, tokens):
+    """Resolve attendee chips and reject anything that is not a real person/email."""
+    resolved, unresolved, bad = _resolve_attendees(user, tokens)
+    if bad:
+        raise HTTPException(status_code=400, detail="Not a valid email: " + ", ".join(bad))
+    if unresolved:
+        raise HTTPException(status_code=400, detail="Couldn't identify: " + ", ".join(unresolved))
+    if not resolved:
+        raise HTTPException(status_code=400, detail="Add at least one valid person to invite.")
+    return resolved
+
+
+def _has_when(ctx):
+    """Whether a scheduling request provides a usable date/time constraint."""
+    if any(ctx.get(k) for k in ("weekday", "explicit_date", "span_days",
+                                "time_start_local", "time_end_local")):
+        return True
+    if ctx.get("day_offset") is not None:
+        return True
+    if ctx.get("time_kind") and ctx.get("time_kind") != "any":
+        return True
+    purpose = (ctx.get("purpose") or "").lower()
+    return any(name in purpose for name in intents.PURPOSE_DAYPARTS)
+
+
 def _known_users(emails):
     """Map email -> {id, name, tz, has_token} for attendees who've signed into Nomi."""
     if not emails:
@@ -219,9 +244,8 @@ def _run_search(user, org_tz, attendee_tokens, ctx, now):
     Attendee chips are authoritative — the LLM never adds or removes people.
     Returns (result_dict, people, plan).
     """
-    resolved, unresolved, bad = _resolve_attendees(user, attendee_tokens)
-    if bad:
-        raise HTTPException(status_code=400, detail="Not a valid email: " + ", ".join(bad))
+    resolved = _require_valid_attendees(user, attendee_tokens)
+    unresolved = []
 
     plan = intents.resolve_plan(ctx, org_tz, now)
 
@@ -403,6 +427,12 @@ def api_smart_schedule(req: SmartScheduleRequest, user=Depends(current_user)):
         intent = llm.interpret_scheduling_intent(text, org_tz)
         ctx = intents.merge_intent({}, intent)
 
+    if not _has_when(ctx):
+        raise HTTPException(
+            status_code=422,
+            detail="Add when you'd like to meet, such as ‘tomorrow afternoon’ or ‘Friday at 2’."
+        )
+
     # explicit controls fill in only what the text didn't specify
     if not ctx.get("duration_minutes") and req.duration_minutes:
         ctx["duration_minutes"] = req.duration_minutes
@@ -437,7 +467,7 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
         if not prop:
             return {"action": "search", "answer": "There's no time on the table yet — "
                     "tell me what to find first.", "context": ctx}
-        resolved, unresolved, bad = _resolve_attendees(user, req.attendees)
+        resolved = _require_valid_attendees(user, req.attendees)
         try:
             event = _do_book(
                 user, org_tz,
@@ -456,6 +486,12 @@ def api_ask(req: AskRequest, user=Depends(current_user)):
         }
 
     # --- search / refine ---
+    if not _has_when(ctx):
+        raise HTTPException(
+            status_code=422,
+            detail="Ask about a date or time, such as ‘Are they free tomorrow afternoon?’"
+        )
+
     result, people, plan = _run_search(user, org_tz, req.attendees, ctx, now)
     summary = _availability_summary(result, people, plan, org_tz)
     reply = llm.answer_question(req.text, summary)

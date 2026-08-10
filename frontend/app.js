@@ -328,7 +328,11 @@
     userTurn.classList.remove("pending");
     setAskBusy(false);
     if (status === 401) { state.me = null; applyMode(); return; }
-    if (!ok) { showErr("#askErr", (data && data.detail) || "Something went wrong."); return; }
+    if (!ok) {
+      $("#askq").value = text;
+      showErr("#askErr", (data && data.detail) || "Something went wrong.");
+      return;
+    }
 
     if (data.context) state.ctx = data.context;
 
